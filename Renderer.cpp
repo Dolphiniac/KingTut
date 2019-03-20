@@ -1,0 +1,190 @@
+#include "Renderer.h"
+#include "Image.h"
+
+renderObjects_t renderObjects;
+
+static void CreateInstance() {
+	const char * instanceExtensionNames[] = {
+		VK_KHR_SURFACE_EXTENSION_NAME,
+		VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
+	};
+	const char * instanceLayerNames[] = {
+#if !defined( NDEBUG )
+		"VK_LAYER_LUNARG_standard_validation",
+#endif
+	};
+
+	VkApplicationInfo appInfo = {};
+	appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+	appInfo.pApplicationName = "Vulkan test app";
+	appInfo.pEngineName = "Mark II renderer";
+	appInfo.applicationVersion = VK_MAKE_VERSION( 0, 2, 0 );
+	appInfo.engineVersion = VK_MAKE_VERSION( 0, 2, 0 );
+	appInfo.apiVersion = VK_API_VERSION_1_0;
+
+	VkInstanceCreateInfo instanceCreateInfo = {};
+	instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+	instanceCreateInfo.enabledLayerCount = ARRAY_COUNT( instanceLayerNames );
+	instanceCreateInfo.ppEnabledLayerNames = instanceLayerNames;
+	instanceCreateInfo.enabledExtensionCount = ARRAY_COUNT( instanceExtensionNames );
+	instanceCreateInfo.ppEnabledExtensionNames = instanceExtensionNames;
+	VK_CHECK( vkCreateInstance( &instanceCreateInfo, NULL, &renderObjects.instance ) );
+}
+
+static void GetPhysicalDevice() {
+	uint32_t physicalDeviceCount;
+	VK_CHECK( vkEnumeratePhysicalDevices( renderObjects.instance, &physicalDeviceCount, NULL ) );
+	VkPhysicalDevice * allPhysicalDevices = new VkPhysicalDevice[ physicalDeviceCount ];
+	VK_CHECK( vkEnumeratePhysicalDevices( renderObjects.instance, &physicalDeviceCount, allPhysicalDevices ) );
+	uint32_t hardwareVendors[] = {
+		0x1022,
+		0x1002, // AMD
+		0x10DE, // NVIDIA
+		8086, // Intel
+	};
+	for ( uint32_t i = 0; i < physicalDeviceCount; ++i ) {
+		VkPhysicalDeviceProperties props;
+		vkGetPhysicalDeviceProperties( physicalDevices[ i ], &props );
+		bool foundHardwareVendor = false;
+		for ( uint32_t j = 0; j < ARRAY_COUNT( hardwareVendors ); ++j ) {
+			if ( props.vendorID == hardwareVendors[ j ] ) {
+				foundHardwareVendor = true;
+				break;
+			}
+		}
+		if ( foundHardwareVendor == true ) {
+			renderObjects.physicalDevice = allPhysicalDevices[ i ];
+			break;
+		}
+	}
+	// We're not going to worry about not getting a physical device here.  It'll break if it's still NULL (the default value) when we use it
+	delete[] allPhysicalDevices; // They're just handles.  This doesn't actually invalidate any of the physical devices
+	vkGetPhysicalDeviceMemoryProperties( renderObjects.physicalDevice, &renderObjects.memoryProperties );
+}
+
+static void CreateDevice() {
+	uint32_t queueFamilyCount;
+	vkGetPhysicalDeviceQueueFamilyProperties( renderObjects.physicalDevice, &queueFamilyCount, NULL );
+	VkQueueFamilyProperties * queueFamilyProperties = new VkQueueFamilyProperties[ queueFamilyCount ];
+	vkGetPhysicalDeviceQueueFamilyProperties( renderObjects.physicalDevice, &queueFamilyCount, queueFamilyProperties );
+	renderObjects.queueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	VkQueueFlags desiredQueueCaps = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
+	for ( uint32_t i = 0; i < queueFamilyCount; ++i ) {
+		if ( ( queueFamilyProperties[ i ].queueFlags & desiredQueueCaps ) == desiredQueueCaps ) {
+			renderObjects.queueFamilyIndex = i;
+			break;
+		}
+	}
+	delete[] queueFamilyProperties;
+	float queuePriority = 1.0f;	// This value must be between 0 and 1, by spec, but it's unimportant, because we'll only create the one
+	VkDeviceQueueCreateInfo queueCreateInfo = {};
+	queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+	queueCreateInfo.queueFamilyIndex = renderObjects.queueFamilyIndex;
+	queueCreateInfo.queueCount = 1;
+	queueCreateInfo.pQueuePriorities = &queuePriority;
+	const char * deviceExtensionNames[] = {
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+	};
+	VkDeviceCreateInfo deviceCreateInfo = {};
+	deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	deviceCreateInfo.queueCreateInfoCount = 1;
+	deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
+	deviceCreateInfo.enabledExtensionCount = ARRAY_COUNT( deviceExtensionNames );
+	deviceCreateInfo.ppEnabledExtensionNames = deviceExtensionNames;
+	VK_CHECK( vkCreateDevice( renderObjects.physicalDevice, &deviceCreateInfo, NULL, &renderObjects.device ) );
+	vkGetDeviceQueue( renderObjects.device, renderObjects.queueFamilyIndex, 0, &renderObjects.queue );
+}
+
+static void CreateSwapchain() {
+	VkBool32 presentSupported;
+	vkGetPhysicalDeviceSurfaceSupportKHR( renderObjects.physicalDevice, renderObjects.queueFamilyIndex, renderObjects.surface, &presentSupported );
+	VkSurfaceCapabilitiesKHR surfaceCapabilities;
+	VK_CHECK( vkGetPhysicalDeviceSurfaceCapabilitiesKHR( renderObjects.physicalDevice, renderObjects.surface, &surfaceCapabilities ) );
+	renderObjects.swapchainExtent = surfaceCapabilities.currentExtent;
+	uint32_t surfaceFormatCount;
+	VK_CHECK( vkGetPhysicalDeviceSurfaceFormatsKHR( renderObjects.physicalDevice, renderObjects.surface, &surfaceFormatCount, NULL ) );
+	VkSurfaceFormatKHR * surfaceFormats[ surfaceFormatCount ];
+	VK_CHECK( vkGetPhysicalDeviceSurfaceFormatsKHR( renderObjects.physicalDevice, renderObjects.surface, &surfaceFormatCount, surfaceFormats ) );
+	uint32_t presentModeCount;
+	VK_CHECK( vkGetPhysicalDeviceSurfacePresentModesKHR( renderObjects.physicalDevice, renderObjects.surface, &presentModeCount, NULL ) );
+	VkPresentModeKHR * presentModes = new VkPresentModeKHR[ presentModeCount ];
+	VK_CHECK( vkGetPhysicalDeviceSurfacePresentModesKHR( renderObjects.physicalDevice, renderObjects.surface, &presentModeCount, presentModes ) );
+	VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;	// This is required to be supported, so we'll use it as a fallback
+	for ( uint32_t i = 0; i < presentModeCount; ++i ) {
+		if ( presentModes[ i ] == VK_PRESENT_MODE_FIFO_RELAXED_KHR ) {
+			presentMode = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+			break;
+		}
+	}
+	renderObjects.swapchainFormat = surfaceFormats[ 0 ].format;
+	VkSwapchainCreateInfoKHR swapchainCreateInfo = {};
+	swapchainCreateInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+	swapchainCreateInfo.surface = renderObjects.surface;
+	swapchainCreateInfo.minImageCount = SWAPCHAIN_IMAGE_COUNT;	// Technically, we should check this against the surface capabilities, but we're probably fine with a sane number like 2 or 3
+	swapchainCreateInfo.imageFormat = surfaceFormats[ 0 ].format;
+	swapchainCreateInfo.imageColorSpace = surfaceFormats[ 0 ].colorSpace;	// These are truly unimportant.  What you'll normally get is an SRGB nonlinear color space, and a BGRA8 format.  These are fine
+	swapchainCreateInfo.imageExtent = renderObjects.swapchainExtent;
+	swapchainCreateInfo.imageArrayLayers = 1;
+	swapchainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	swapchainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	swapchainCreateInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;	// We can expect the surface to support this capability
+	swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;	// Same as above
+	swapchainCreateInfo.presentMode = presentMode;
+	swapchainCreateInfo.clipped = VK_FALSE;
+	VK_CHECK( vkCreateSwapchainKHR( renderObjects.device, &swapchainCreateInfo, NULL, &renderObjects.swapchain ) );
+	delete[] presentModes;
+	delete[] surfaceFormats;
+}
+
+static void CreateCommandBuffers() {
+	VkCommandPoolCreateInfo commandPoolCreateInfo = {};
+	commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	commandPoolCreateInfo.queueFamilyIndex = renderObjects.queueFamilyIndex;
+	VK_CHECK( vkCreateCommandPool( renderObjects.device, &commandPoolCreateInfo, NULL, &renderObjects.commandPool ) );
+	VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
+	commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	commandBufferAllocateInfo.commandPool = renderObjects.commandPool;
+	commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	commandBufferAllocateInfo.commandBufferCount = COMMAND_BUFFER_COUNT;
+	VK_CHECK( vkAllocateCommandBuffers( renderObjects.device, &commandBufferAllocateInfo, &renderObjects.commandBuffer ) );
+}
+
+static void CreateSynchronizationPrimitives() {
+	VkFenceCreateInfo fenceCreateInfo = {};
+	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+	for ( uint32_t i = 0; i < COMMAND_BUFFER_COUNT; ++i ) {
+		VK_CHECK( vkCreateFence( renderObjects.device, &fenceCreateInfo, NULL, &renderObjects.fences[ i ] ) );
+	}
+
+	VkSemaphoreCreateInfo semaphoreCreateInfo = {};
+	semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	VK_CHECK( vkCreateSemaphore( renderObjects.device, &semaphoreCreateInfo, NULL, &renderObjects.imageAcquireSemaphore ) );
+	VK_CHECK( vkCreateSemaphore( renderObjects.device, &semaphoreCreateInfo, NULL, &renderObjects.renderCompleteSemaphore ) );
+}
+
+static void CreateRenderTargets() {
+	renderObjects.colorImage = Image::Create( 1920, 1080, IMAGE_FORMAT_RGBA8, IMAGE_USAGE_RENDER_TARGET );
+	renderObjects.depthImage = Image::Create( 1920, 1080, IMAGE_FORMAT_DEPTH, IMAGE_USAGE_RENDER_TARGET );
+	renderObjects.swapchainImage = Image::CreateFromSwapchain();
+}
+
+void Renderer_Init() {
+	CreateInstance();
+
+	GetPhysicalDevice();
+
+	CreateDevice();
+
+	extern void CreateSurface();	// No need to declare this in Renderer.h, since this will be the only call
+	CreateSurface();
+
+	CreateSwapchain();
+
+	CreateCommandBuffers();
+
+	CreateSynchronizationPrimitives();
+
+	CreateRenderTargets();
+}
