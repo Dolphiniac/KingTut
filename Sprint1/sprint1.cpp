@@ -3,6 +3,8 @@
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan.h>
 
+#pragma comment( lib, "vulkan-1" )
+
 #if defined( ARRAY_COUNT )
 #undef ARRAY_COUNT
 #endif
@@ -29,6 +31,7 @@ struct renderObjects_t {
 	VkShaderModule		vertexModule;
 	VkShaderModule		fragmentModule;
 	VkPipelineLayout	pipelineLayout;
+	VkPipeline			pipeline;
 };
 
 renderObjects_t barebonesRenderer;
@@ -86,7 +89,7 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 	};
 	for ( uint32_t i = 0; i < physicalDeviceCount; ++i ) {
 		VkPhysicalDeviceProperties props;
-		vkGetPhysicalDeviceProperties( physicalDevices[ i ], &props );
+		vkGetPhysicalDeviceProperties( allPhysicalDevices[ i ], &props );
 		bool foundHardwareVendor = false;
 		for ( uint32_t j = 0; j < ARRAY_COUNT( hardwareVendors ); ++j ) {
 			if ( props.vendorID == hardwareVendors[ j ] ) {
@@ -143,7 +146,7 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 	barebonesRenderer.swapchainExtent = surfaceCapabilities.currentExtent;
 	uint32_t surfaceFormatCount;
 	result = vkGetPhysicalDeviceSurfaceFormatsKHR( barebonesRenderer.physicalDevice, barebonesRenderer.surface, &surfaceFormatCount, NULL );
-	VkSurfaceFormatKHR * surfaceFormats[ surfaceFormatCount ];
+	VkSurfaceFormatKHR * surfaceFormats = new VkSurfaceFormatKHR[ surfaceFormatCount ];
 	result = vkGetPhysicalDeviceSurfaceFormatsKHR( barebonesRenderer.physicalDevice, barebonesRenderer.surface, &surfaceFormatCount, surfaceFormats );
 	uint32_t presentModeCount;
 	result = vkGetPhysicalDeviceSurfacePresentModesKHR( barebonesRenderer.physicalDevice, barebonesRenderer.surface, &presentModeCount, NULL );
@@ -245,7 +248,7 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 	HANDLE shaderHandle;
 	shaderHandle = CreateFileA( "simpleTri.vspv", GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL );
 	DWORD fileSize;
-	fileSize = GetFileSize( shaderHandle );
+	fileSize = GetFileSize( shaderHandle, NULL );
 	char * fileBuffer = new char[ fileSize ];
 	DWORD bytesRead;
 	ReadFile( shaderHandle, fileBuffer, fileSize, &bytesRead, NULL );
@@ -257,7 +260,7 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 	delete[] fileBuffer;
 	CloseHandle( shaderHandle );
 	shaderHandle = CreateFileA( "simpleTri.fspv", GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL );
-	fileSize = GetFileSize( shaderHandle );
+	fileSize = GetFileSize( shaderHandle, NULL );
 	fileBuffer = new char[ fileSize ];
 	ReadFile( shaderHandle, fileBuffer, fileSize, &bytesRead, NULL );
 	shaderModuleCreateInfo.codeSize = fileSize;
@@ -310,7 +313,7 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 	rasterizationStateCreateInfo.lineWidth = 1.0f;
 	VkSampleMask sampleMask = 0xFFFFFFFF;
 	VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo = {};
-	multisampleStateCreateInfo.sType = VK_STRUCTURE_TYPE_MULTISAMPLE_STATE_CREATE_INFO;
+	multisampleStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 	multisampleStateCreateInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 	multisampleStateCreateInfo.sampleShadingEnable = VK_FALSE;
 	multisampleStateCreateInfo.minSampleShading = 1.0f;	// Required by spec without an optional feature enabled
