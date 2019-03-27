@@ -1,7 +1,7 @@
 #include "Mesh.h"
 #include <string.h>
 
-Mesh * Mesh::Create( const void * vertexData, uint32_t vertexSize, const void * indexData, uint32_t indexSize ) {
+Mesh * Mesh::Create( const void * vertexData, uint32_t vertexSize, const void * indexData, uint32_t indexSize, uint32_t indexCount ) {
 	Mesh * result = new Mesh;
 
 	VkBufferCreateInfo vertexBufferCreateInfo = {};
@@ -33,6 +33,8 @@ Mesh * Mesh::Create( const void * vertexData, uint32_t vertexSize, const void * 
 	VK_CHECK( vkMapMemory( renderObjects.device, result->m_indexBufferMemory.memory, result->m_indexBufferMemory.offset, indexSize, 0, &memory ) );
 	memcpy( memory, indexData, indexSize );
 	vkUnmapMemory( renderObjects.device, result->m_indexBufferMemory.memory );
+
+	result->m_indexCount = indexCount;
 
 	return result;
 }

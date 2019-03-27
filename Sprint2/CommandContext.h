@@ -2,28 +2,34 @@
 
 #include "Renderer.h"
 
-const uint32_t RENDER_TARGET_COUNT = 2;
-
 class Image;
 class Mesh;
 class ShaderProgram;
 
 struct renderPassDescription_t {
-	uint32_t colorTargetCount;
-	imageFormat_t colorFormats[ RENDER_TARGET_COUNT ];
+	imageFormat_t colorFormat;
+	bool useColor;
+	bool clearColor;
 	imageFormat_t depthFormat;
 	bool useDepth;
+	bool clearDepth;
 	VkRenderPass renderPass = VK_NULL_HANDLE;
 
 	bool operator ==( const renderPassDescription_t & other ) const {
-		if ( colorTargetCount != other.colorTargetCount ) {
+		if ( useColor != other.useColor ) {
+			return false;
+		}
+		if ( clearColor != other.clearColor ) {
 			return false;
 		}
 		if ( useDepth != other.useDepth ) {
 			return false;
 		}
-		for ( uint32_t i = 0; i < colorTargetCount + ( useDepth ? 1 : 0 ); ++i ) {
-			if ( colorFormats[ i ] != other.colorFormats[ i ] ) {
+		if ( clearDepth != other.clearDepth ) {
+			return false;
+		}
+		if ( useColor == true ) {
+			if ( colorFormat != other.colorFormat ) {
 				return false;
 			}
 		}
@@ -61,12 +67,15 @@ struct pipelineDescription_t {
 class CommandContext {
 public:
 	static CommandContext * Create();
-	void SetRenderTargets( uint32_t colorTargetCount, const Image * colorTargets[ RENDER_TARGET_COUNT ], const Image * depthStencilTarget );
+	void SetRenderTargets( const Image * colorTarget, const Image * depthStencilTarget );
 	void Draw( const Mesh * mesh, const ShaderProgram * shader );
+	void Clear( bool doClearColor, bool doClearDepth, float clearR, float clearG, float clearB, float clearA, float clearDepth );
 
 private:
 	VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
 	pipelineDescription_t m_pipelineState = {};
+	VkFramebuffer m_framebuffer = VK_NULL_HANDLE;
+	VkRect2D m_renderArea = {};
 
 	bool m_inRenderPass = false;
 

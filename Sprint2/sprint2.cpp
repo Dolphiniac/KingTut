@@ -3,6 +3,7 @@
 #include "Renderer.h"
 #include "Mesh.h"
 #include "ShaderProgram.h"
+#include "CommandContext.h"
 
 int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd ) {
 	Renderer_Init();
@@ -71,6 +72,8 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 	ShaderProgram * shader = ShaderProgram::Create( "simpleTri" );
 
 	while ( true ) {
+		renderObjects.commandContext->SetRenderTargets( renderObjects.colorImage, renderObjects.depthImage );
+		renderObjects.commandContext->Clear( true, true, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f );
 		// THE RENDER LOOP!!!!!!!!
 		uint32_t imageIndex;
 		result = vkAcquireNextImageKHR( barebonesRenderer.device, barebonesRenderer.swapchain, INFINITE, VK_NULL_HANDLE, VK_NULL_HANDLE, &imageIndex );

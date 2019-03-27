@@ -10,29 +10,29 @@ static VkRenderPass CreateRenderPass( const renderPassDescription_t & descriptio
 	renderPassDescription_t newDesc = description;
 	VkRenderPassCreateInfo renderPassCreateInfo = {};
 	renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	renderPassCreateInfo.attachmentCount = newDesc.colorTargetCount + ( newDesc.useDepth ? 1 : 0 );
+	renderPassCreateInfo.attachmentCount = ( newDesc.useColor ? 1 : 0 ) + ( newDesc.useDepth ? 1 : 0 );
 	std::vector< VkAttachmentDescription > attachmentDescriptions;
 	std::vector< VkAttachmentReference > attachmentReferences;
 	attachmentDescriptions.resize( renderPassCreateInfo.attachmentCount );
 	attachmentReferences.resize( renderPassCreateInfo.attachmentCount );
 	extern VkFormat TranslateFormat( imageFormat_t format );
-	for ( uint32_t i = 0; i < newDesc.colorTargetCount; ++i ) {
-		VkAttachmentDescription & attachmentDescription = attachmentDescriptions[ i ];
+	if ( newDesc.useColor == true ) {
+		VkAttachmentDescription & attachmentDescription = attachmentDescriptions[ 0 ];
 		attachmentDescription = {};
 		attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 		attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		attachmentDescription.format = TranslateFormat( description.colorFormats[ i ] );
+		attachmentDescription.format = TranslateFormat( description.colorFormat );
 		attachmentDescription.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 		attachmentDescription.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachmentDescription.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachmentDescription.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		attachmentDescription.samples = VK_SAMPLE_COUNT_1_BIT;
-		VkAttachmentReference & attachmentReference = attachmentReferences[ i ];
-		attachmentReference.attachment = i;
+		VkAttachmentReference & attachmentReference = attachmentReferences[ 0 ];
+		attachmentReference.attachment = 0;
 		attachmentReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	}
 	if ( newDesc.useDepth == true ) {
-		VkAttachmentDescription & attachmentDescription = attachmentDescriptions[ newDesc.colorTargetCount ];
+		VkAttachmentDescription & attachmentDescription = attachmentDescriptions[ newDesc.useColor ? 1 : 0 ];
 		attachmentDescription = {};
 		attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 		attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -42,16 +42,18 @@ static VkRenderPass CreateRenderPass( const renderPassDescription_t & descriptio
 		attachmentDescription.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 		attachmentDescription.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachmentDescription.samples = VK_SAMPLE_COUNT_1_BIT;
-		VkAttachmentReference & attachmentReference = attachmentReferences[ newDesc.colorTargetCount ];
-		attachmentReference.attachment = newDesc.colorTargetCount;
+		VkAttachmentReference & attachmentReference = attachmentReferences[ newDesc.useColor ? 1 : 0 ];
+		attachmentReference.attachment = newDesc.useColor ? 1 : 0;
 		attachmentReference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 	}
 	renderPassCreateInfo.pAttachments = attachmentDescriptions.data();
 	VkSubpassDescription subpassDescription = {};
-	subpassDescription.colorAttachmentCount = newDesc.colorTargetCount;
-	subpassDescription.pColorAttachments = attachmentReferences.data();
+	if ( newDesc.useColor == true ) {
+		subpassDescription.colorAttachmentCount = 1;
+		subpassDescription.pColorAttachments = attachmentReferences.data();
+	}
 	if ( newDesc.useDepth == true ) {
-		subpassDescription.pDepthStencilAttachment = &attachmentReferences[ newDesc.colorTargetCount ];
+		subpassDescription.pDepthStencilAttachment = &attachmentReferences[ newDesc.useColor ? 1 : 0 ];
 	}
 	subpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	renderPassCreateInfo.subpassCount = 1;
@@ -66,8 +68,7 @@ static VkRenderPass CreateRenderPass( const renderPassDescription_t & descriptio
 struct framebufferDescription_t {
 	uint32_t width;
 	uint32_t height;
-	uint32_t colorTargetCount;
-	VkImageView colorViews[ RENDER_TARGET_COUNT ];
+	VkImageView colorView;
 	VkImageView depthStencilView;
 
 	VkFramebuffer framebuffer;
@@ -79,13 +80,8 @@ struct framebufferDescription_t {
 		if ( height != other.height ) {
 			return false;
 		}
-		if ( colorTargetCount != other.colorTargetCount ) {
+		if ( colorView != other.colorView ) {
 			return false;
-		}
-		for ( uint32_t i = 0; i < colorTargetCount; ++i ) {
-			if ( colorViews[ i ] != other.colorViews[ i ] ) {
-				return false;
-			}
 		}
 		if ( depthStencilView != other.depthStencilView ) {
 			return false;
@@ -109,11 +105,12 @@ static VkFramebuffer CreateFramebuffer( const framebufferDescription_t & descrip
 	framebufferCreateInfo.height = newDesc.height;
 	framebufferCreateInfo.layers = 1;
 	framebufferCreateInfo.renderPass = renderPass;
-	framebufferCreateInfo.attachmentCount = newDesc.colorTargetCount + ( newDesc.depthStencilView != VK_NULL_HANDLE ? 1 : 0 );
+	framebufferCreateInfo.attachmentCount = ( newDesc.colorView != VK_NULL_HANDLE ? 1 : 0 ) + ( newDesc.depthStencilView != VK_NULL_HANDLE ? 1 : 0 );
 
 	std::vector< VkImageView > attachments;
-	attachments.resize( newDesc.colorTargetCount );
-	memcpy( attachments.data(), newDesc.colorViews, sizeof( VkImageView ) * newDesc.colorTargetCount );
+	if ( newDesc.colorView != VK_NULL_HANDLE ) {
+		attachments.push_back( newDesc.colorView );
+	}
 	if ( newDesc.depthStencilView != VK_NULL_HANDLE ) {
 		attachments.push_back( newDesc.depthStencilView );
 	}
@@ -141,9 +138,9 @@ CommandContext * CommandContext::Create() {
 	return result;
 }
 
-void CommandContext::SetRenderTargets( uint32_t colorTargetCount, const Image * colorTargets[ RENDER_TARGET_COUNT ], const Image * depthStencilTarget ) {
+void CommandContext::SetRenderTargets( const Image * colorTarget, const Image * depthStencilTarget ) {
 	renderPassDescription_t renderPassDescription;
-	renderPassDescription.colorTargetCount = colorTargetCount;
+	renderPassDescription.useDepth = colorTarget != NULL;
 	renderPassDescription.useDepth = depthStencilTarget != NULL;
 	VkRenderPass renderPass = VK_NULL_HANDLE;
 	for ( size_t i = 0; i < createdPasses.size(); ++i ) {
@@ -158,17 +155,16 @@ void CommandContext::SetRenderTargets( uint32_t colorTargetCount, const Image * 
 	}
 
 	framebufferDescription_t framebufferDescription = {};	// Important, so that depthStencilView is defaulted to VK_NULL_HANDLE
-	if ( colorTargetCount > 0 ) {
-		framebufferDescription.width = colorTargets[ 0 ]->GetWidth();
-		framebufferDescription.height = colorTargets[ 0 ]->GetHeight();
+	if ( colorTarget != NULL ) {
+		framebufferDescription.width = colorTarget->GetWidth();
+		framebufferDescription.height = colorTarget->GetHeight();
 	} else {
 		// We will expect the depth attachment to be valid here
 		framebufferDescription.width = depthStencilTarget->GetWidth();
 		framebufferDescription.height = depthStencilTarget->GetHeight();
 	}
-	framebufferDescription.colorTargetCount = colorTargetCount;
-	for ( uint32_t i = 0; i < colorTargetCount; ++i ) {
-		framebufferDescription.colorViews[ i ] = colorTargets[ i ]->GetView();
+	if ( colorTarget != NULL ) {
+		framebufferDescription.colorView = colorTarget->GetView();
 	}
 	if ( depthStencilTarget != NULL ) {
 		framebufferDescription.depthStencilView = depthStencilTarget->GetView();
@@ -183,6 +179,7 @@ void CommandContext::SetRenderTargets( uint32_t colorTargetCount, const Image * 
 	if ( framebuffer == VK_NULL_HANDLE ) {
 		framebuffer = CreateFramebuffer( framebufferDescription, renderPass );
 	}
+	m_framebuffer = framebuffer;	// Caching this so render passes can be re-begun
 
 	if ( m_inRenderPass == true ) {
 		vkCmdEndRenderPass( m_commandBuffer );
@@ -194,6 +191,7 @@ void CommandContext::SetRenderTargets( uint32_t colorTargetCount, const Image * 
 	renderPassBeginInfo.renderPass = renderPass;
 	renderPassBeginInfo.renderArea.extent.width = framebufferDescription.width;
 	renderPassBeginInfo.renderArea.extent.height = framebufferDescription.height;
+	m_renderArea = renderPassBeginInfo.renderArea;
 
 	vkCmdBeginRenderPass( m_commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE );
 	m_inRenderPass = true;
@@ -217,16 +215,13 @@ static VkPipeline CreatePipeline( const pipelineDescription_t & pipelineState ) 
 		pipelineCreateInfo.pDepthStencilState = &depthStencilState;
 	}
 	VkPipelineColorBlendStateCreateInfo colorBlendState = {};
-	VkPipelineColorBlendAttachmentState colorBlendAttachments[ RENDER_TARGET_COUNT ];
-	if ( description.renderPassState.colorTargetCount > 0 ) {
+	VkPipelineColorBlendAttachmentState colorBlendAttachment;
+	if ( description.renderPassState.useColor == true ) {
 		colorBlendState.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-		colorBlendState.attachmentCount = description.renderPassState.colorTargetCount;
-		for ( uint32_t i = 0; i < colorBlendState.attachmentCount; ++i ) {
-			VkPipelineColorBlendAttachmentState & attachment = colorBlendAttachments[ i ];
-			attachment = {};
-			attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-		}
-		colorBlendState.pAttachments = colorBlendAttachments;
+		colorBlendAttachment = {};
+		colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+		colorBlendState.attachmentCount = 1;
+		colorBlendState.pAttachments = &colorBlendAttachment;
 		pipelineCreateInfo.pColorBlendState = &colorBlendState;
 	}
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = {};
@@ -318,4 +313,54 @@ void CommandContext::Draw( const Mesh * mesh, const ShaderProgram * shader ) {
 	}
 
 	vkCmdBindPipeline( m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline );
+	VkBuffer vertexBuffer = mesh->GetVertexBuffer();
+	VkDeviceSize offset = 0;
+	vkCmdBindVertexBuffers( m_commandBuffer, 0, 1, &vertexBuffer, &offset );
+	VkBuffer indexBuffer = mesh->GetIndexBuffer();
+	vkCmdBindIndexBuffer( m_commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16 );
+	vkCmdDrawIndexed( m_commandBuffer, mesh->GetIndexCount(), 1, 0, 0, 0 );
 }
+
+void CommandContext::Clear( bool doClearColor, bool doClearDepth, float clearR, float clearG, float clearB, float clearA, float clearDepth ) {
+	m_pipelineState.renderPassState.clearColor = doClearColor;
+	m_pipelineState.renderPassState.clearDepth = doClearDepth;
+	VkRenderPass renderPass = VK_NULL_HANDLE;
+	for ( size_t i = 0; i < createdPasses.size(); ++i ) {
+		if ( createdPasses[ i ] == m_pipelineState.renderPassState ) {
+			renderPass = createdPasses[ i ].renderPass;
+			break;
+		}
+	}
+	if ( renderPass == VK_NULL_HANDLE ) {
+		renderPass = CreateRenderPass( m_pipelineState.renderPassState );
+	}
+	m_pipelineState.renderPassState.renderPass = renderPass;
+
+	// We're expected to be in a render pass at this point (SetRenderTargets should have been called before this)
+	vkCmdEndRenderPass( m_commandBuffer );
+
+	VkRenderPassBeginInfo beginInfo = {};
+	beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	beginInfo.framebuffer = m_framebuffer;
+	beginInfo.renderPass = renderPass;
+	beginInfo.renderArea = m_renderArea;
+	VkClearValue clearValues[ 2 ] = {};
+	uint32_t clearValueCount = 0;
+	if ( doClearColor == true ) {
+		VkClearColorValue & clearColor = clearValues[ clearValueCount ].color;
+		clearColor.float32[ 0 ] = clearR;
+		clearColor.float32[ 1 ] = clearG;
+		clearColor.float32[ 2 ] = clearB;
+		clearColor.float32[ 3 ] = clearA;
+		++clearValueCount;
+	}
+	if ( doClearDepth == true ) {
+		VkClearDepthStencilValue & clearDepthValue = clearValues[ clearValueCount ].depthStencil;
+		clearDepthValue.depth = clearDepth;
+		++clearValueCount;
+	}
+	beginInfo.clearValueCount = clearValueCount;
+	beginInfo.pClearValues = clearValues;
+	
+	vkCmdBeginRenderPass( m_commandBuffer, &beginInfo, VK_SUBPASS_CONTENTS_INLINE );
+}	
