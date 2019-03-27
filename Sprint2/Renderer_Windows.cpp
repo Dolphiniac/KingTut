@@ -29,3 +29,7 @@ void CreateSurface() {
 	surfaceCreateInfo.hwnd = window;
 	VkResult result = vkCreateWin32SurfaceKHR( renderObjects.instance, &surfaceCreateInfo, NULL, &renderObjects.surface );
 }
+
+const char * GetPlatformSurfaceExtensionName() {
+	return VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
+}

@@ -1,13 +1,16 @@
 #include "Renderer.h"
 #include "Image.h"
+#include "CommandContext.h"
+#include <vector>
 
 renderObjects_t renderObjects;
 
 static void CreateInstance() {
-	const char * instanceExtensionNames[] = {
+	std::vector< const char * > instanceExtensionNames = {
 		VK_KHR_SURFACE_EXTENSION_NAME,
-		VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
 	};
+	extern const char * GetPlatformSurfaceExtensionName();
+	instanceExtensionNames.push_back( GetPlatformSurfaceExtensionName() );
 	const char * instanceLayerNames[] = {
 #if !defined( NDEBUG )
 		"VK_LAYER_LUNARG_standard_validation",
@@ -26,8 +29,8 @@ static void CreateInstance() {
 	instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	instanceCreateInfo.enabledLayerCount = ARRAY_COUNT( instanceLayerNames );
 	instanceCreateInfo.ppEnabledLayerNames = instanceLayerNames;
-	instanceCreateInfo.enabledExtensionCount = ARRAY_COUNT( instanceExtensionNames );
-	instanceCreateInfo.ppEnabledExtensionNames = instanceExtensionNames;
+	instanceCreateInfo.enabledExtensionCount = ( uint32_t )instanceExtensionNames.size();
+	instanceCreateInfo.ppEnabledExtensionNames = instanceExtensionNames.data();
 	VK_CHECK( vkCreateInstance( &instanceCreateInfo, NULL, &renderObjects.instance ) );
 }
 
@@ -44,7 +47,7 @@ static void GetPhysicalDevice() {
 	};
 	for ( uint32_t i = 0; i < physicalDeviceCount; ++i ) {
 		VkPhysicalDeviceProperties props;
-		vkGetPhysicalDeviceProperties( physicalDevices[ i ], &props );
+		vkGetPhysicalDeviceProperties( allPhysicalDevices[ i ], &props );
 		bool foundHardwareVendor = false;
 		for ( uint32_t j = 0; j < ARRAY_COUNT( hardwareVendors ); ++j ) {
 			if ( props.vendorID == hardwareVendors[ j ] ) {
@@ -103,7 +106,7 @@ static void CreateSwapchain() {
 	renderObjects.swapchainExtent = surfaceCapabilities.currentExtent;
 	uint32_t surfaceFormatCount;
 	VK_CHECK( vkGetPhysicalDeviceSurfaceFormatsKHR( renderObjects.physicalDevice, renderObjects.surface, &surfaceFormatCount, NULL ) );
-	VkSurfaceFormatKHR * surfaceFormats[ surfaceFormatCount ];
+	VkSurfaceFormatKHR * surfaceFormats = new VkSurfaceFormatKHR[ surfaceFormatCount ];
 	VK_CHECK( vkGetPhysicalDeviceSurfaceFormatsKHR( renderObjects.physicalDevice, renderObjects.surface, &surfaceFormatCount, surfaceFormats ) );
 	uint32_t presentModeCount;
 	VK_CHECK( vkGetPhysicalDeviceSurfacePresentModesKHR( renderObjects.physicalDevice, renderObjects.surface, &presentModeCount, NULL ) );
@@ -139,24 +142,19 @@ static void CreateSwapchain() {
 static void CreateCommandBuffers() {
 	VkCommandPoolCreateInfo commandPoolCreateInfo = {};
 	commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 	commandPoolCreateInfo.queueFamilyIndex = renderObjects.queueFamilyIndex;
+	commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
 	VK_CHECK( vkCreateCommandPool( renderObjects.device, &commandPoolCreateInfo, NULL, &renderObjects.commandPool ) );
-	VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
-	commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	commandBufferAllocateInfo.commandPool = renderObjects.commandPool;
-	commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	commandBufferAllocateInfo.commandBufferCount = COMMAND_BUFFER_COUNT;
-	VK_CHECK( vkAllocateCommandBuffers( renderObjects.device, &commandBufferAllocateInfo, &renderObjects.commandBuffer ) );
+
+	renderObjects.commandContext = CommandContext::Create();
 }
 
 static void CreateSynchronizationPrimitives() {
 	VkFenceCreateInfo fenceCreateInfo = {};
 	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-	for ( uint32_t i = 0; i < COMMAND_BUFFER_COUNT; ++i ) {
-		VK_CHECK( vkCreateFence( renderObjects.device, &fenceCreateInfo, NULL, &renderObjects.fences[ i ] ) );
-	}
+	VK_CHECK( vkCreateFence( renderObjects.device, &fenceCreateInfo, NULL, &renderObjects.renderFence ) );
 
 	VkSemaphoreCreateInfo semaphoreCreateInfo = {};
 	semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -170,6 +168,12 @@ static void CreateRenderTargets() {
 	renderObjects.swapchainImage = Image::CreateFromSwapchain();
 }
 
+static void CreateStubPipelineLayout() {
+	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
+	pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	VkResult result = vkCreatePipelineLayout( renderObjects.device, &pipelineLayoutCreateInfo, NULL, &renderObjects.emptyLayout );
+}
+
 void Renderer_Init() {
 	CreateInstance();
 
@@ -177,7 +181,7 @@ void Renderer_Init() {
 
 	CreateDevice();
 
-	extern void CreateSurface();	// No need to declare this in Renderer.h, since this will be the only call
+	extern void CreateSurface();
 	CreateSurface();
 
 	CreateSwapchain();
@@ -187,4 +191,6 @@ void Renderer_Init() {
 	CreateSynchronizationPrimitives();
 
 	CreateRenderTargets();
+
+	CreateStubPipelineLayout();
 }

@@ -55,19 +55,8 @@ Image * Image::Create( uint32_t width, uint32_t height, imageFormat_t format, im
 	VkMemoryRequirements memReq;
 	vkGetImageMemoryRequirements( renderObjects.device, result->m_image, &memReq );
 
-	VkMemoryAllocateInfo memoryAllocateInfo = {};
-	memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	memoryAllocateInfo.allocationSize = memReq.size;
-	for ( uint32_t i = 0; i < renderObjects.memoryProperties.memoryTypeCount; ++i ) {
-		if ( ( ( 1 << i ) & memReq.memoryTypeBits ) != 0 ) {
-			if ( ( renderObjects.memoryProperties.memoryTypes[ i ].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT ) == VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT ) {
-				memoryAllocateInfo.memoryTypeIndex = i;
-				break;
-			}
-		}
-	}
-	VK_CHECK( vkAllocateMemory( renderObjects.device, &memoryAllocateInfo, NULL, &result->m_memory ) );
-	VK_CHECK( vkBindImageMemory( renderObjects.device, result->m_image, result->m_memory, 0 ) );
+	AllocateDeviceMemory( memReq, MEMORY_NONE, result->m_memory );
+	VK_CHECK( vkBindImageMemory( renderObjects.device, result->m_image, result->m_memory.memory, result->m_memory.offset ) );
 
 	VkImageViewCreateInfo viewCreateInfo = {};
 	viewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -83,6 +72,8 @@ Image * Image::Create( uint32_t width, uint32_t height, imageFormat_t format, im
 	viewCreateInfo.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
 	viewCreateInfo.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
 	VK_CHECK( vkCreateImageView( renderObjects.device, &viewCreateInfo, NULL, &result->m_imageView ) );
+
+	return result;
 }
 
 Image * Image::CreateFromSwapchain() {
@@ -110,4 +101,6 @@ Image * Image::CreateFromSwapchain() {
 		viewCreateInfo.image = result->m_swapchainImages[ i ];
 		VK_CHECK( vkCreateImageView( renderObjects.device, &viewCreateInfo, NULL, &result->m_swapchainViews[ i ] ) );
 	}
+
+	return result;
 }

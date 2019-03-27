@@ -1,105 +1,75 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "Renderer.h"
+#include "Mesh.h"
+#include "ShaderProgram.h"
 
 int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd ) {
-	HANDLE shaderHandle;
-	shaderHandle = CreateFileA( "simpleTri.vspv", GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL );
-	DWORD fileSize;
-	fileSize = GetFileSize( shaderHandle );
-	char * fileBuffer = new char[ fileSize ];
-	DWORD bytesRead;
-	ReadFile( shaderHandle, fileBuffer, fileSize, &bytesRead, NULL );
-	VkShaderModuleCreateInfo shaderModuleCreateInfo = {};
-	shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	shaderModuleCreateInfo.codeSize = fileSize;
-	shaderModuleCreateInfo.pCode = ( uint32_t * )fileBuffer;
-	result = vkCreateShaderModule( barebonesRenderer.device, &shaderModuleCreateInfo, NULL, &barebonesRenderer.vertexModule );
-	delete[] fileBuffer;
-	CloseHandle( shaderHandle );
-	shaderHandle = CreateFileA( "simpleTri.fspv", GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL );
-	fileSize = GetFileSize( shaderHandle );
-	fileBuffer = new char[ fileSize ];
-	ReadFile( shaderHandle, fileBuffer, fileSize, &bytesRead, NULL );
-	shaderModuleCreateInfo.codeSize = fileSize;
-	shaderModuleCreateInfo.pCode = ( uint32_t * )fileBuffer;
-	result = vkCreateShaderModule( barebonesRenderer.device, &shaderModuleCreateInfo, NULL, &barebonesRenderer.fragmentModule );
-	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
-	pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	result = vkCreatePipelineLayout( barebonesRenderer.device, &pipelineLayoutCreateInfo, NULL, &barebonesRenderer.pipelineLayout );
-	VkPipelineShaderStageCreateInfo stages[ 2 ] = {};
-	stages[ 0 ].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	stages[ 0 ].stage = VK_SHADER_STAGE_VERTEX_BIT;
-	stages[ 0 ].module = barebonesRenderer.vertexModule;
-	stages[ 0 ].pName = "main";
-	stages[ 1 ].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	stages[ 1 ].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-	stages[ 1 ].module = barebonesRenderer.fragmentModule;
-	stages[ 1 ].pName = "main";
-	VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo = {};
-	vertexInputStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCreateInfo = {};
-	inputAssemblyStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-	inputAssemblyStateCreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	inputAssemblyStateCreateInfo.primitiveRestartEnable = VK_FALSE;
-	VkViewport viewport = {};
-	viewport.x = 0.0f;
-	viewport.y = 0.0f;
-	viewport.width = ( float )barebonesRenderer.swapchainExtent.width;
-	viewport.height = ( float )barebonesRenderer.swapchainExtent.height;
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 1.0f;
-	VkRect2D scissor = {};
-	scissor.offset.x = 0;
-	scissor.offset.y = 0;
-	scissor.extent.width = barebonesRenderer.swapchainExtent.width;
-	scissor.extent.height = barebonesRenderer.swapchainExtent.height;
-	VkPipelineViewportStateCreateInfo viewportStateCreateInfo = {};
-	viewportStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-	viewportStateCreateInfo.viewportCount = 1;
-	viewportStateCreateInfo.pViewports = &viewport;
-	viewportStateCreateInfo.scissorCount = 1;
-	viewportStateCreateInfo.pScissors = &scissor;
-	VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo = {};
-	rasterizationStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-	rasterizationStateCreateInfo.depthClampEnable;
-	rasterizationStateCreateInfo.rasterizerDiscardEnable = VK_FALSE;
-	rasterizationStateCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;
-	rasterizationStateCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
-	rasterizationStateCreateInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-	rasterizationStateCreateInfo.depthBiasEnable = VK_FALSE;
-	rasterizationStateCreateInfo.lineWidth = 1.0f;
-	VkSampleMask sampleMask = 0xFFFFFFFF;
-	VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo = {};
-	multisampleStateCreateInfo.sType = VK_STRUCTURE_TYPE_MULTISAMPLE_STATE_CREATE_INFO;
-	multisampleStateCreateInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-	multisampleStateCreateInfo.sampleShadingEnable = VK_FALSE;
-	multisampleStateCreateInfo.minSampleShading = 1.0f;	// Required by spec without an optional feature enabled
-	multisampleStateCreateInfo.pSampleMask = &sampleMask;
-	multisampleStateCreateInfo.alphaToCoverageEnable = VK_FALSE;
-	multisampleStateCreateInfo.alphaToOneEnable = VK_FALSE;
-	VkPipelineColorBlendAttachmentState colorBlendAttachmentState = {};
-	colorBlendAttachmentState.blendEnable = VK_FALSE;
-	colorBlendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	VkPipelineColorBlendStateCreateInfo colorBlendStateCreateInfo = {};
-	colorBlendStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-	colorBlendStateCreateInfo.logicOpEnable = VK_FALSE;
-	colorBlendStateCreateInfo.attachmentCount = 1;
-	colorBlendStateCreateInfo.pAttachments = &colorBlendAttachmentState;
-	VkGraphicsPipelineCreateInfo graphicsPipelineCreateInfo = {};
-	graphicsPipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	graphicsPipelineCreateInfo.stageCount = 2;
-	graphicsPipelineCreateInfo.pStages = stages;
-	graphicsPipelineCreateInfo.pVertexInputState = &vertexInputStateCreateInfo;
-	graphicsPipelineCreateInfo.pInputAssemblyState = &inputAssemblyStateCreateInfo;
-	graphicsPipelineCreateInfo.pViewportState = &viewportStateCreateInfo;
-	graphicsPipelineCreateInfo.pRasterizationState = &rasterizationStateCreateInfo;
-	graphicsPipelineCreateInfo.pMultisampleState = &multisampleStateCreateInfo;
-	graphicsPipelineCreateInfo.pColorBlendState = &colorBlendStateCreateInfo;
-	graphicsPipelineCreateInfo.layout = barebonesRenderer.pipelineLayout;
-	graphicsPipelineCreateInfo.renderPass = barebonesRenderer.renderPass;
-	graphicsPipelineCreateInfo.subpass = 0;
-	result = vkCreateGraphicsPipelines( barebonesRenderer.device, VK_NULL_HANDLE, 1, &graphicsPipelineCreateInfo, NULL, &barebonesRenderer.pipeline );
+	Renderer_Init();
+
+	vertex_t fullscreenTriVerts[ 3 ] = {
+		{
+			{
+				-1.0f,
+				3.0f,
+				0.0f,
+			},
+			{
+				0.0f,
+				-1.0f,
+			},
+			{
+				1.0f,
+				0.0f,
+				0.0f,
+				1.0f
+			},
+		},
+		{
+			{
+				-1.0f,
+				-1.0f,
+				0.0f,
+			},
+			{
+				0.0f,
+				1.0f,
+			},
+			{
+				0.0f,
+				1.0f,
+				0.0f,
+				1.0f,
+			},
+		},
+		{
+			{
+				3.0f,
+				-1.0f,
+				0.0f,
+			},
+			{
+				2.0f,
+				1.0f,
+			},
+			{
+				0.0f,
+				0.0f,
+				1.0f,
+				1.0f,
+			},
+		},
+	};
+
+	uint16_t fullscreenTriIndices[ 3 ] = {
+		0,
+		1,
+		2,
+	};
+
+	Mesh * fullscreenTri = Mesh::Create( fullscreenTriVerts, sizeof( fullscreenTriVerts ), fullscreenTriIndices, sizeof( fullscreenTriIndices ) );
+	ShaderProgram * shader = ShaderProgram::Create( "simpleTri" );
+
 	while ( true ) {
 		// THE RENDER LOOP!!!!!!!!
 		uint32_t imageIndex;

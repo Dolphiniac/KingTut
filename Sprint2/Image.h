@@ -1,8 +1,7 @@
 #pragma once
 
 #include "Renderer.h"
-
-#define BIT( x ) ( 1 << ( x ) )
+#include "Memory.h"
 
 enum imageFormat_t {
 	IMAGE_FORMAT_RGBA8,
@@ -25,7 +24,7 @@ public:
 
 private:
 	VkImage m_image = VK_NULL_HANDLE;
-	VkDeviceMemory m_memory = VK_NULL_HANDLE;
+	allocation_t m_memory = {};
 	VkImageView m_imageView = VK_NULL_HANDLE;
 
 	uint32_t m_width = 0;

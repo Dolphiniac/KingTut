@@ -1,31 +1,8 @@
-#include "CommandCoAntext.h"
+#include "CommandContext.h"
+#include "Image.h"
+#include "Mesh.h"
+#include "ShaderProgram.h"
 #include <vector>
-
-struct renderPassDescription_t {
-	uint32_t colorTargetCount;
-	imageFormat_t colorFormats[ RENDER_TARGET_COUNT ];
-	imageFormat_t depthFormat;
-	bool useDepth;
-	VkRenderPass renderPass = VK_NULL_HANDLE;
-
-	bool operator ==( const renderPassDescription_t & other ) {
-		if ( colorTargetCount != other.colorTargetCount ) {
-			return false;
-		}
-		if ( useDepth != other.useDepth ) {
-			return false;
-		}
-		for ( uint32_t i = 0; i < colorTargetCount + ( useDepth ? 1 : 0 ); ++i ) {
-			if ( formats[ i ] != other.formats[ i ] ) {
-				return false;
-			}
-		}
-		return true;
-	}
-	bool operator !=( const renderPassDescription_t & other ) {
-		return !( *this == other );
-	}
-};
 
 static std::vector< renderPassDescription_t > createdPasses;
 
@@ -95,7 +72,7 @@ struct framebufferDescription_t {
 
 	VkFramebuffer framebuffer;
 
-	bool operator ==( const framebufferDescription_t & other ) {
+	bool operator ==( const framebufferDescription_t & other ) const {
 		if ( width != other.width ) {
 			return false;
 		}
@@ -106,7 +83,7 @@ struct framebufferDescription_t {
 			return false;
 		}
 		for ( uint32_t i = 0; i < colorTargetCount; ++i ) {
-			if ( colorViews != other.colorViews[ i ] ) {
+			if ( colorViews[ i ] != other.colorViews[ i ] ) {
 				return false;
 			}
 		}
@@ -116,7 +93,7 @@ struct framebufferDescription_t {
 		return true;
 	}
 
-	bool operator !=( const framebufferDescription_t & other ) {
+	bool operator !=( const framebufferDescription_t & other ) const {
 		return !( *this == other );
 	}
 };
@@ -148,37 +125,23 @@ static VkFramebuffer CreateFramebuffer( const framebufferDescription_t & descrip
 
 CommandContext * CommandContext::Create() {
 	CommandContext * result = new CommandContext;
-	VkCommandPoolCreateInfo poolCreateInfo = {};
-	poolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	poolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-	poolCreateInfo.queueFamilyIndex = renderObjects.queueFamilyIndex;
-	VK_CHECK( vkCreateCommandPool( renderObjects.device, &poolCreateInfo, NULL, &m_commandPool ) );
 
 	VkCommandBufferAllocateInfo bufferAllocateInfo = {};
 	bufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	bufferAllocateInfo.commandPool = m_commandPool;
+	bufferAllocateInfo.commandPool = renderObjects.commandPool;
 	bufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	bufferAllocateInfo.commandBufferCount = COMMAND_BUFFER_COUNT;
-	VK_CHECK( vkAllocateCommandBuffers( renderObjects.device, &bufferAllocateInfo, m_commandBuffers ) );
+	bufferAllocateInfo.commandBufferCount = 1;
+	VK_CHECK( vkAllocateCommandBuffers( renderObjects.device, &bufferAllocateInfo, &result->m_commandBuffer ) );
 
-	VkFenceCreateInfo fenceCreateInfo = {};
-	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	fenceCreateInfo.flags = 0;	// We'll create the first fence
-	VK_CHECK( vkCreateFence( renderObjects.device, &fenceCreateInfo, NULL, &m_fences[ 0 ] ) );
-	fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-	for ( uint32_t i = 1; i < COMMAND_BUFFER_COUNT; ++i ) {
-		VK_CHECK( vkCreateFence( renderObjects.device, &fenceCreateInfo, NULL, &m_fences[ i ] ) );
-	}
-
-	m_commandBuffer = m_commandBuffers[ 0 ];
-	m_fence = m_fences[ 0 ];
 	VkCommandBufferBeginInfo beginInfo = {};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	VK_CHECK( vkBeginCommandBuffer( m_commandBuffer, &beginInfo ) );
+	VK_CHECK( vkBeginCommandBuffer( result->m_commandBuffer, &beginInfo ) );
+
+	return result;
 }
 
-void CommandContext::SetRenderTargets( uint32_t colorTargetCount, Image * colorTargets[ RENDER_TARGET_COUNT ], Image * depthStencilTarget ) {
+void CommandContext::SetRenderTargets( uint32_t colorTargetCount, const Image * colorTargets[ RENDER_TARGET_COUNT ], const Image * depthStencilTarget ) {
 	renderPassDescription_t renderPassDescription;
 	renderPassDescription.colorTargetCount = colorTargetCount;
 	renderPassDescription.useDepth = depthStencilTarget != NULL;
@@ -189,6 +152,7 @@ void CommandContext::SetRenderTargets( uint32_t colorTargetCount, Image * colorT
 			break;
 		}
 	}
+	m_pipelineState.renderPassState = renderPassDescription;
 	if ( renderPass == VK_NULL_HANDLE ) {
 		renderPass = CreateRenderPass( renderPassDescription );
 	}
@@ -233,4 +197,125 @@ void CommandContext::SetRenderTargets( uint32_t colorTargetCount, Image * colorT
 
 	vkCmdBeginRenderPass( m_commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE );
 	m_inRenderPass = true;
+}
+
+static std::vector< pipelineDescription_t > createdPipelines;
+
+static VkPipeline CreatePipeline( const pipelineDescription_t & pipelineState ) {
+	pipelineDescription_t description = pipelineState;
+
+	VkGraphicsPipelineCreateInfo pipelineCreateInfo = {};
+	pipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	pipelineCreateInfo.renderPass = description.renderPassState.renderPass;
+	pipelineCreateInfo.subpass = 0;
+	VkPipelineDepthStencilStateCreateInfo depthStencilState = {};
+	if ( description.renderPassState.useDepth == true ) {
+		depthStencilState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+		depthStencilState.depthTestEnable = VK_TRUE;
+		depthStencilState.depthWriteEnable = VK_TRUE;
+		depthStencilState.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+		pipelineCreateInfo.pDepthStencilState = &depthStencilState;
+	}
+	VkPipelineColorBlendStateCreateInfo colorBlendState = {};
+	VkPipelineColorBlendAttachmentState colorBlendAttachments[ RENDER_TARGET_COUNT ];
+	if ( description.renderPassState.colorTargetCount > 0 ) {
+		colorBlendState.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+		colorBlendState.attachmentCount = description.renderPassState.colorTargetCount;
+		for ( uint32_t i = 0; i < colorBlendState.attachmentCount; ++i ) {
+			VkPipelineColorBlendAttachmentState & attachment = colorBlendAttachments[ i ];
+			attachment = {};
+			attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+		}
+		colorBlendState.pAttachments = colorBlendAttachments;
+		pipelineCreateInfo.pColorBlendState = &colorBlendState;
+	}
+	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = {};
+	inputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	pipelineCreateInfo.pInputAssemblyState = &inputAssemblyState;
+	VkPipelineVertexInputStateCreateInfo vertexInputState = {};
+	vertexInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	VkVertexInputBindingDescription vertexInputBinding = {};
+	vertexInputBinding.binding = 0;
+	vertexInputBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+	vertexInputBinding.stride = sizeof( vertex_t );
+	vertexInputState.vertexBindingDescriptionCount = 1;
+	vertexInputState.pVertexBindingDescriptions = &vertexInputBinding;
+	VkVertexInputAttributeDescription vertexInputAttributes[ 3 ] = {};
+	vertexInputAttributes[ 0 ].binding = 0;
+	vertexInputAttributes[ 0 ].format = VK_FORMAT_R32G32B32_SFLOAT;
+	vertexInputAttributes[ 0 ].location = 0;
+	vertexInputAttributes[ 0 ].offset = offsetof( vertex_t, position );
+	vertexInputAttributes[ 1 ].binding = 0;
+	vertexInputAttributes[ 1 ].format = VK_FORMAT_R32G32_SFLOAT;
+	vertexInputAttributes[ 1 ].location = 1;
+	vertexInputAttributes[ 1 ].offset = offsetof( vertex_t, uv );
+	vertexInputAttributes[ 2 ].binding = 0;
+	vertexInputAttributes[ 2 ].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	vertexInputAttributes[ 2 ].location = 2;
+	vertexInputAttributes[ 2 ].offset = offsetof( vertex_t, color );
+	vertexInputState.vertexAttributeDescriptionCount = 3;
+	vertexInputState.pVertexAttributeDescriptions = vertexInputAttributes;
+	pipelineCreateInfo.pVertexInputState = &vertexInputState;
+	VkPipelineMultisampleStateCreateInfo multisampleState = {};
+	multisampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	multisampleState.minSampleShading = 1.0f;
+	VkSampleMask sampleMask = -1U;
+	multisampleState.pSampleMask = &sampleMask;
+	multisampleState.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	pipelineCreateInfo.pMultisampleState = &multisampleState;
+	VkPipelineRasterizationStateCreateInfo rasterizationState = {};
+	rasterizationState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+	rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;
+	rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+	rasterizationState.lineWidth = 1.0f;
+	rasterizationState.polygonMode = VK_POLYGON_MODE_FILL;
+	pipelineCreateInfo.pRasterizationState = &rasterizationState;
+	pipelineCreateInfo.pTessellationState = NULL;
+	VkPipelineViewportStateCreateInfo viewportState = {};
+	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	pipelineCreateInfo.pViewportState = &viewportState;
+	VkPipelineDynamicStateCreateInfo dynamicState = {};
+	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+	VkDynamicState dynamicStates[ 2 ] = {
+		VK_DYNAMIC_STATE_VIEWPORT,
+		VK_DYNAMIC_STATE_SCISSOR,
+	};
+	dynamicState.dynamicStateCount = 2;
+	dynamicState.pDynamicStates = dynamicStates;
+	pipelineCreateInfo.pDynamicState = &dynamicState;
+	VkPipelineShaderStageCreateInfo shaderStages[ 2 ];
+	shaderStages[ 0 ] = {};
+	shaderStages[ 0 ].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	shaderStages[ 0 ].module = description.shader->GetVertexModule();
+	shaderStages[ 0 ].stage = VK_SHADER_STAGE_VERTEX_BIT;
+	shaderStages[ 0 ].pName = "main";
+	shaderStages[ 1 ] = {};
+	shaderStages[ 1 ].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	shaderStages[ 1 ].module = description.shader->GetFragmentModule();
+	shaderStages[ 1 ].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	shaderStages[ 1 ].pName = "main";
+	pipelineCreateInfo.stageCount = 2;
+	pipelineCreateInfo.pStages = shaderStages;
+	pipelineCreateInfo.layout = renderObjects.emptyLayout;
+
+	VK_CHECK( vkCreateGraphicsPipelines( renderObjects.device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, NULL, &description.pipeline ) );
+
+	createdPipelines.push_back( description );
+}
+
+void CommandContext::Draw( const Mesh * mesh, const ShaderProgram * shader ) {
+	m_pipelineState.shader = shader;
+	VkPipeline pipeline = VK_NULL_HANDLE;
+	for ( size_t i = 0; i < createdPipelines.size(); ++i ) {
+		if ( m_pipelineState == createdPipelines[ i ] ) {
+			pipeline = createdPipelines[ i ].pipeline;
+			break;
+		}
+	}
+	if ( pipeline == VK_NULL_HANDLE ) {
+		pipeline = CreatePipeline( m_pipelineState );
+	}
+
+	vkCmdBindPipeline( m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline );
 }

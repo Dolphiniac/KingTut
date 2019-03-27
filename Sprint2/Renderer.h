@@ -8,6 +8,11 @@
 #endif
 #define ARRAY_COUNT( x ) ( sizeof( ( x ) ) / sizeof( ( x )[ 0 ] ) )
 
+#if defined( BIT )
+#undef BIT
+#endif
+#define BIT( x ) ( 1 << ( x ) )
+
 #define VK_CHECK( call ) assert( ( call ) == VK_SUCCESS )
 
 const uint32_t SWAPCHAIN_IMAGE_COUNT = 2;
@@ -27,13 +32,12 @@ struct renderObjects_t {
 	VkFormat							swapchainFormat;
 	VkSwapchainKHR						swapchain;
 	VkFramebuffer						framebuffers[ SWAPCHAIN_IMAGE_COUNT ];
+	VkCommandPool						commandPool;
 	CommandContext *					commandContext;
+	VkFence								renderFence;
 	VkSemaphore							imageAcquireSemaphore;
 	VkSemaphore							renderCompleteSemaphore;
-	VkRenderPass						renderPass;
-	VkShaderModule						vertexModule;
-	VkShaderModule						fragmentModule;
-	VkPipelineLayout					pipelineLayout;
+	VkPipelineLayout					emptyLayout;
 
 	Image *								colorImage;
 	Image *								depthImage;
