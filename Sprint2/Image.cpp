@@ -36,6 +36,9 @@ static VkImageAspectFlags TranslateFormatToAspect( imageFormat_t format ) {
 
 Image * Image::Create( uint32_t width, uint32_t height, imageFormat_t format, imageUsageFlags_t usage ) {
 	Image * result = new Image;
+	result->m_format = format;
+	result->m_width = width;
+	result->m_height = height;
 	VkImageCreateInfo imageCreateInfo = {};
 	imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imageCreateInfo.arrayLayers = 1;
@@ -78,6 +81,8 @@ Image * Image::Create( uint32_t width, uint32_t height, imageFormat_t format, im
 
 Image * Image::CreateFromSwapchain() {
 	Image * result = new Image;
+	result->m_width = renderObjects.swapchainExtent.width;
+	result->m_height = renderObjects.swapchainExtent.height;
 
 	uint32_t swapchainImageCount;
 	VK_CHECK( vkGetSwapchainImagesKHR( renderObjects.device, renderObjects.swapchain, &swapchainImageCount, NULL ) );
@@ -103,4 +108,9 @@ Image * Image::CreateFromSwapchain() {
 	}
 
 	return result;
+}
+
+void Image::SelectSwapchainImage( uint32_t index ) {
+	m_image = m_swapchainImages[ index ];
+	m_imageView = m_swapchainViews[ index ];
 }

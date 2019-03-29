@@ -1,5 +1,4 @@
 #include "CommandContext.h"
-#include "Image.h"
 #include "Mesh.h"
 #include "ShaderProgram.h"
 #include <vector>
@@ -22,7 +21,7 @@ static VkRenderPass CreateRenderPass( const renderPassDescription_t & descriptio
 		attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 		attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 		attachmentDescription.format = TranslateFormat( description.colorFormat );
-		attachmentDescription.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		attachmentDescription.loadOp = newDesc.clearColor ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 		attachmentDescription.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachmentDescription.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachmentDescription.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -37,7 +36,7 @@ static VkRenderPass CreateRenderPass( const renderPassDescription_t & descriptio
 		attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 		attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 		attachmentDescription.format = TranslateFormat( description.depthFormat );
-		attachmentDescription.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		attachmentDescription.loadOp = newDesc.clearDepth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 		attachmentDescription.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachmentDescription.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 		attachmentDescription.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -138,10 +137,35 @@ CommandContext * CommandContext::Create() {
 	return result;
 }
 
+void CommandContext::Begin() {
+	VkCommandBufferBeginInfo beginInfo = {};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	VK_CHECK( vkBeginCommandBuffer( m_commandBuffer, &beginInfo ) );
+
+	m_inRenderPass = false;
+}
+
+void CommandContext::End() {
+	if ( m_inRenderPass == true ) {
+		vkCmdEndRenderPass( m_commandBuffer );
+	}
+	VK_CHECK( vkEndCommandBuffer( m_commandBuffer ) );
+}
+
 void CommandContext::SetRenderTargets( const Image * colorTarget, const Image * depthStencilTarget ) {
 	renderPassDescription_t renderPassDescription;
-	renderPassDescription.useDepth = colorTarget != NULL;
+	renderPassDescription.clearColor = false;
+	renderPassDescription.clearDepth = false;
+	renderPassDescription.useColor = colorTarget != NULL;
 	renderPassDescription.useDepth = depthStencilTarget != NULL;
+	if ( colorTarget != NULL ) {
+		renderPassDescription.colorFormat = colorTarget->GetFormat();
+	}
+	if ( depthStencilTarget != NULL ) {
+		renderPassDescription.depthFormat = depthStencilTarget->GetFormat();
+	}
 	VkRenderPass renderPass = VK_NULL_HANDLE;
 	for ( size_t i = 0; i < createdPasses.size(); ++i ) {
 		if ( renderPassDescription == createdPasses[ i ] ) {
@@ -195,6 +219,11 @@ void CommandContext::SetRenderTargets( const Image * colorTarget, const Image * 
 
 	vkCmdBeginRenderPass( m_commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE );
 	m_inRenderPass = true;
+}
+
+void CommandContext::SetViewportAndScissor( uint32_t width, uint32_t height ) {
+	m_viewportAndScissorWidth = width;
+	m_viewportAndScissorHeight = height;
 }
 
 static std::vector< pipelineDescription_t > createdPipelines;
@@ -255,7 +284,7 @@ static VkPipeline CreatePipeline( const pipelineDescription_t & pipelineState ) 
 	VkPipelineMultisampleStateCreateInfo multisampleState = {};
 	multisampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 	multisampleState.minSampleShading = 1.0f;
-	VkSampleMask sampleMask = -1U;
+	VkSampleMask sampleMask = 0xFFFFFFFF;
 	multisampleState.pSampleMask = &sampleMask;
 	multisampleState.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 	pipelineCreateInfo.pMultisampleState = &multisampleState;
@@ -272,11 +301,11 @@ static VkPipeline CreatePipeline( const pipelineDescription_t & pipelineState ) 
 	pipelineCreateInfo.pViewportState = &viewportState;
 	VkPipelineDynamicStateCreateInfo dynamicState = {};
 	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-	VkDynamicState dynamicStates[ 2 ] = {
+	VkDynamicState dynamicStates[] = {
 		VK_DYNAMIC_STATE_VIEWPORT,
 		VK_DYNAMIC_STATE_SCISSOR,
 	};
-	dynamicState.dynamicStateCount = 2;
+	dynamicState.dynamicStateCount = ARRAY_COUNT( dynamicStates );
 	dynamicState.pDynamicStates = dynamicStates;
 	pipelineCreateInfo.pDynamicState = &dynamicState;
 	VkPipelineShaderStageCreateInfo shaderStages[ 2 ];
@@ -297,6 +326,8 @@ static VkPipeline CreatePipeline( const pipelineDescription_t & pipelineState ) 
 	VK_CHECK( vkCreateGraphicsPipelines( renderObjects.device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, NULL, &description.pipeline ) );
 
 	createdPipelines.push_back( description );
+
+	return description.pipeline;
 }
 
 void CommandContext::Draw( const Mesh * mesh, const ShaderProgram * shader ) {
@@ -313,6 +344,17 @@ void CommandContext::Draw( const Mesh * mesh, const ShaderProgram * shader ) {
 	}
 
 	vkCmdBindPipeline( m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline );
+	VkViewport viewport = {};
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+	viewport.width = ( float )m_viewportAndScissorWidth;
+	viewport.height = ( float )m_viewportAndScissorHeight;
+	vkCmdSetViewport( m_commandBuffer, 0, 1, &viewport );
+
+	VkRect2D scissor = {};
+	scissor.extent.width = m_viewportAndScissorWidth;
+	scissor.extent.height = m_viewportAndScissorHeight;
+	vkCmdSetScissor( m_commandBuffer, 0, 1, &scissor );
 	VkBuffer vertexBuffer = mesh->GetVertexBuffer();
 	VkDeviceSize offset = 0;
 	vkCmdBindVertexBuffers( m_commandBuffer, 0, 1, &vertexBuffer, &offset );
@@ -363,4 +405,26 @@ void CommandContext::Clear( bool doClearColor, bool doClearDepth, float clearR, 
 	beginInfo.pClearValues = clearValues;
 	
 	vkCmdBeginRenderPass( m_commandBuffer, &beginInfo, VK_SUBPASS_CONTENTS_INLINE );
-}	
+}
+
+void CommandContext::Blit( const Image * src, const Image * dst ) {
+	if ( m_inRenderPass == true ) {
+		vkCmdEndRenderPass( m_commandBuffer );
+		m_inRenderPass = false;
+	}
+
+	VkImageBlit blit = {};
+	blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	blit.srcSubresource.baseArrayLayer = 0;
+	blit.srcSubresource.mipLevel = 0;
+	blit.srcSubresource.layerCount = 1;
+	blit.dstSubresource = blit.srcSubresource;
+	blit.srcOffsets[ 1 ].x = src->GetWidth();
+	blit.srcOffsets[ 1 ].y = src->GetHeight();
+	blit.srcOffsets[ 1 ].z = 1;
+	blit.dstOffsets[ 1 ].x = dst->GetWidth();
+	blit.dstOffsets[ 1 ].y = dst->GetHeight();
+	blit.dstOffsets[ 1 ].z = 1;
+
+	vkCmdBlitImage( m_commandBuffer, src->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR );
+}

@@ -18,11 +18,15 @@ class Image {
 public:
 	static Image * Create( uint32_t width, uint32_t height, imageFormat_t format, imageUsageFlags_t usage );
 	static Image * CreateFromSwapchain();
+	imageFormat_t GetFormat() const { return m_format; }
 	uint32_t GetWidth() const { return m_width; }
 	uint32_t GetHeight() const { return m_height; }
+	VkImage GetImage() const { return m_image; }
 	VkImageView GetView() const { return m_imageView; }
+	void SelectSwapchainImage( uint32_t index );
 
 private:
+	imageFormat_t m_format;
 	VkImage m_image = VK_NULL_HANDLE;
 	allocation_t m_memory = {};
 	VkImageView m_imageView = VK_NULL_HANDLE;

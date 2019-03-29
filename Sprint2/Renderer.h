@@ -38,6 +38,7 @@ struct renderObjects_t {
 	VkSemaphore							imageAcquireSemaphore;
 	VkSemaphore							renderCompleteSemaphore;
 	VkPipelineLayout					emptyLayout;
+	uint32_t							swapchainImageIndex;
 
 	Image *								colorImage;
 	Image *								depthImage;
@@ -47,3 +48,6 @@ struct renderObjects_t {
 extern renderObjects_t renderObjects;
 
 void Renderer_Init();
+void Renderer_BeginFrame();
+void Renderer_AcquireSwapchainImage();
+void Renderer_EndFrame();

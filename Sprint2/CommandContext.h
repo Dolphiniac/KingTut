@@ -1,8 +1,8 @@
 #pragma once
 
 #include "Renderer.h"
+#include "Image.h"
 
-class Image;
 class Mesh;
 class ShaderProgram;
 
@@ -67,15 +67,22 @@ struct pipelineDescription_t {
 class CommandContext {
 public:
 	static CommandContext * Create();
+	void Begin();
+	void End();
 	void SetRenderTargets( const Image * colorTarget, const Image * depthStencilTarget );
+	void SetViewportAndScissor( uint32_t width, uint32_t height );
 	void Draw( const Mesh * mesh, const ShaderProgram * shader );
 	void Clear( bool doClearColor, bool doClearDepth, float clearR, float clearG, float clearB, float clearA, float clearDepth );
+	void Blit( const Image * src, const Image * dst );
+	VkCommandBuffer GetCommandBuffer() const { return m_commandBuffer; }
 
 private:
 	VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
 	pipelineDescription_t m_pipelineState = {};
 	VkFramebuffer m_framebuffer = VK_NULL_HANDLE;
 	VkRect2D m_renderArea = {};
+	uint32_t m_viewportAndScissorWidth = 0;
+	uint32_t m_viewportAndScissorHeight = 0;
 
 	bool m_inRenderPass = false;
 

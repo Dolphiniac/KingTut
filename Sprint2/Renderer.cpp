@@ -2,8 +2,12 @@
 #include "Image.h"
 #include "CommandContext.h"
 #include <vector>
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 
 renderObjects_t renderObjects;
+
+#pragma comment( lib, "vulkan-1" )
 
 static void CreateInstance() {
 	std::vector< const char * > instanceExtensionNames = {
@@ -193,4 +197,43 @@ void Renderer_Init() {
 	CreateRenderTargets();
 
 	CreateStubPipelineLayout();
+}
+
+void Renderer_BeginFrame() {
+	VK_CHECK( vkWaitForFences( renderObjects.device, 1, &renderObjects.renderFence, VK_TRUE, INFINITE ) );
+	VK_CHECK( vkResetFences( renderObjects.device, 1, &renderObjects.renderFence ) );
+
+	renderObjects.commandContext->Begin();
+}
+
+void Renderer_AcquireSwapchainImage() {
+	VK_CHECK( vkAcquireNextImageKHR( renderObjects.device, renderObjects.swapchain, INFINITE, renderObjects.imageAcquireSemaphore, VK_NULL_HANDLE, &renderObjects.swapchainImageIndex ) );
+
+	renderObjects.swapchainImage->SelectSwapchainImage( renderObjects.swapchainImageIndex );
+}
+
+void Renderer_EndFrame() {
+	renderObjects.commandContext->End();
+
+	VkSubmitInfo submitInfo = {};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	VkPipelineStageFlags waitStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+	VkCommandBuffer commandBuffer = renderObjects.commandContext->GetCommandBuffer();
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+	submitInfo.waitSemaphoreCount = 1;
+	submitInfo.pWaitSemaphores = &renderObjects.imageAcquireSemaphore;
+	submitInfo.pWaitDstStageMask = &waitStageMask;
+	submitInfo.signalSemaphoreCount = 1;
+	submitInfo.pSignalSemaphores = &renderObjects.renderCompleteSemaphore;
+	VK_CHECK( vkQueueSubmit( renderObjects.queue, 1, &submitInfo, renderObjects.renderFence ) );
+
+	VkPresentInfoKHR presentInfo = {};
+	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	presentInfo.swapchainCount = 1;
+	presentInfo.pSwapchains = &renderObjects.swapchain;
+	presentInfo.pImageIndices = &renderObjects.swapchainImageIndex;
+	presentInfo.waitSemaphoreCount = 1;
+	presentInfo.pWaitSemaphores = &renderObjects.renderCompleteSemaphore;
+	VK_CHECK( vkQueuePresentKHR( renderObjects.queue, &presentInfo ) );
 }
