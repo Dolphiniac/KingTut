@@ -1,0 +1,14 @@
+#define LOC_POSITION 0
+#define LOC_UV 1
+#define LOC_COLOR 2
+
+#define SCOPE_FRAME 0
+#define SCOPE_VIEW 1
+#define SCOPE_MESH 2
+
+#define FRAME_UNIFORM_BUFFER_SLOT_0 0
+
+#define VIEW_UNIFORM_BUFFER_SLOT_0 0
+
+#define MESH_UNIFORM_BUFFER_SLOT_0 0
+#define MESH_SAMPLER_SLOT_0 1
