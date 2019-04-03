@@ -10,18 +10,18 @@ static VkRenderPass CreateRenderPass( const renderPassDescription_t & descriptio
 	renderPassDescription_t newDesc = description;
 	VkRenderPassCreateInfo renderPassCreateInfo = {};
 	renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	renderPassCreateInfo.attachmentCount = ( newDesc.useColor ? 1 : 0 ) + ( newDesc.useDepth ? 1 : 0 );
+	renderPassCreateInfo.attachmentCount = ( newDesc.color != NULL ? 1 : 0 ) + ( newDesc.depth != NULL ? 1 : 0 );
 	std::vector< VkAttachmentDescription > attachmentDescriptions;
 	std::vector< VkAttachmentReference > attachmentReferences;
 	attachmentDescriptions.resize( renderPassCreateInfo.attachmentCount );
 	attachmentReferences.resize( renderPassCreateInfo.attachmentCount );
 	extern VkFormat TranslateFormat( imageFormat_t format );
-	if ( newDesc.useColor == true ) {
+	if ( newDesc.color != NULL ) {
 		VkAttachmentDescription & attachmentDescription = attachmentDescriptions[ 0 ];
 		attachmentDescription = {};
 		attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 		attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		attachmentDescription.format = TranslateFormat( description.colorFormat );
+		attachmentDescription.format = TranslateFormat( description.color->GetFormat() );
 		attachmentDescription.loadOp = newDesc.clearColor ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 		attachmentDescription.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachmentDescription.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -31,29 +31,29 @@ static VkRenderPass CreateRenderPass( const renderPassDescription_t & descriptio
 		attachmentReference.attachment = 0;
 		attachmentReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	}
-	if ( newDesc.useDepth == true ) {
-		VkAttachmentDescription & attachmentDescription = attachmentDescriptions[ newDesc.useColor ? 1 : 0 ];
+	if ( newDesc.depth != NULL ) {
+		VkAttachmentDescription & attachmentDescription = attachmentDescriptions[ newDesc.color != NULL ? 1 : 0 ];
 		attachmentDescription = {};
 		attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 		attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-		attachmentDescription.format = TranslateFormat( description.depthFormat );
+		attachmentDescription.format = TranslateFormat( description.depth->GetFormat() );
 		attachmentDescription.loadOp = newDesc.clearDepth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 		attachmentDescription.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachmentDescription.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 		attachmentDescription.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachmentDescription.samples = VK_SAMPLE_COUNT_1_BIT;
-		VkAttachmentReference & attachmentReference = attachmentReferences[ newDesc.useColor ? 1 : 0 ];
-		attachmentReference.attachment = newDesc.useColor ? 1 : 0;
+		VkAttachmentReference & attachmentReference = attachmentReferences[ newDesc.color != NULL ? 1 : 0 ];
+		attachmentReference.attachment = newDesc.color != NULL ? 1 : 0;
 		attachmentReference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 	}
 	renderPassCreateInfo.pAttachments = attachmentDescriptions.data();
 	VkSubpassDescription subpassDescription = {};
-	if ( newDesc.useColor == true ) {
+	if ( newDesc.color != NULL ) {
 		subpassDescription.colorAttachmentCount = 1;
 		subpassDescription.pColorAttachments = attachmentReferences.data();
 	}
-	if ( newDesc.useDepth == true ) {
-		subpassDescription.pDepthStencilAttachment = &attachmentReferences[ newDesc.useColor ? 1 : 0 ];
+	if ( newDesc.depth != NULL ) {
+		subpassDescription.pDepthStencilAttachment = &attachmentReferences[ newDesc.color != NULL ? 1 : 0 ];
 	}
 	subpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	renderPassCreateInfo.subpassCount = 1;
@@ -145,6 +145,7 @@ void CommandContext::Begin() {
 
 	VK_CHECK( vkBeginCommandBuffer( m_commandBuffer, &beginInfo ) );
 
+	m_pipelineState = {};
 	m_inRenderPass = false;
 }
 
@@ -155,18 +156,12 @@ void CommandContext::End() {
 	VK_CHECK( vkEndCommandBuffer( m_commandBuffer ) );
 }
 
-void CommandContext::SetRenderTargets( const Image * colorTarget, const Image * depthStencilTarget ) {
+void CommandContext::SetRenderTargets( Image * colorTarget, Image * depthStencilTarget ) {
 	renderPassDescription_t renderPassDescription;
 	renderPassDescription.clearColor = false;
 	renderPassDescription.clearDepth = false;
-	renderPassDescription.useColor = colorTarget != NULL;
-	renderPassDescription.useDepth = depthStencilTarget != NULL;
-	if ( colorTarget != NULL ) {
-		renderPassDescription.colorFormat = colorTarget->GetFormat();
-	}
-	if ( depthStencilTarget != NULL ) {
-		renderPassDescription.depthFormat = depthStencilTarget->GetFormat();
-	}
+	renderPassDescription.color = colorTarget;
+	renderPassDescription.depth = depthStencilTarget;
 	VkRenderPass renderPass = VK_NULL_HANDLE;
 	for ( size_t i = 0; i < createdPasses.size(); ++i ) {
 		if ( renderPassDescription == createdPasses[ i ] ) {
@@ -221,6 +216,12 @@ void CommandContext::SetRenderTargets( const Image * colorTarget, const Image * 
 
 	vkCmdBeginRenderPass( m_commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE );
 	m_inRenderPass = true;
+	if ( colorTarget != NULL ) {
+		colorTarget->SetLayout( IMAGE_LAYOUT_COLOR_ATTACHMENT );
+	}
+	if ( depthStencilTarget != NULL ) {
+		depthStencilTarget->SetLayout( IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT );
+	}
 }
 
 void CommandContext::SetViewportAndScissor( uint32_t width, uint32_t height ) {
@@ -238,7 +239,7 @@ static VkPipeline CreatePipeline( const pipelineDescription_t & pipelineState ) 
 	pipelineCreateInfo.renderPass = description.renderPassState.renderPass;
 	pipelineCreateInfo.subpass = 0;
 	VkPipelineDepthStencilStateCreateInfo depthStencilState = {};
-	if ( description.renderPassState.useDepth == true ) {
+	if ( description.renderPassState.depth != NULL ) {
 		depthStencilState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 		depthStencilState.depthTestEnable = VK_TRUE;
 		depthStencilState.depthWriteEnable = VK_TRUE;
@@ -247,7 +248,7 @@ static VkPipeline CreatePipeline( const pipelineDescription_t & pipelineState ) 
 	}
 	VkPipelineColorBlendStateCreateInfo colorBlendState = {};
 	VkPipelineColorBlendAttachmentState colorBlendAttachment;
-	if ( description.renderPassState.useColor == true ) {
+	if ( description.renderPassState.color != NULL ) {
 		colorBlendState.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 		colorBlendAttachment = {};
 		colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -414,11 +415,16 @@ void CommandContext::BindDescriptorSet( const DescriptorSet * descriptorSet ) {
 	vkCmdBindDescriptorSets( m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, renderObjects.unifiedPipelineLayout, descriptorSet->GetScope(), 1, &set, 0, NULL );
 }
 
-void CommandContext::Blit( const Image * src, const Image * dst ) {
+void CommandContext::EndRenderPass() {
 	if ( m_inRenderPass == true ) {
 		vkCmdEndRenderPass( m_commandBuffer );
 		m_inRenderPass = false;
+		m_pipelineState.renderPassState = {};
 	}
+}
+
+void CommandContext::Blit( const Image * src, const Image * dst ) {
+	EndRenderPass();
 
 	VkImageBlit blit = {};
 	blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -434,4 +440,57 @@ void CommandContext::Blit( const Image * src, const Image * dst ) {
 	blit.dstOffsets[ 1 ].z = 1;
 
 	vkCmdBlitImage( m_commandBuffer, src->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR );
+}
+
+static void TranslateImageLayout( imageLayout_t layout, VkImageLayout & vulkanLayout, VkAccessFlags & vulkanAccessFlags, VkPipelineStageFlags & pipelineStageFlags ) {
+	switch ( layout ) {
+		case IMAGE_LAYOUT_FRAGMENT_SHADER_READ: {
+			vulkanLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			vulkanAccessFlags = VK_ACCESS_SHADER_READ_BIT;	
+			pipelineStageFlags = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+			break;
+		}
+		case IMAGE_LAYOUT_COLOR_ATTACHMENT: {
+			vulkanLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			vulkanAccessFlags = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+			pipelineStageFlags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+			break;
+		}
+		case IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT: {
+			vulkanLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			vulkanAccessFlags = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+			pipelineStageFlags = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+			break;
+		}
+		case IMAGE_LAYOUT_PRESENT: {
+			vulkanLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+			vulkanAccessFlags = VK_ACCESS_MEMORY_READ_BIT;
+			pipelineStageFlags = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+			break;
+		}
+	}
+}
+
+void CommandContext::PipelineBarrier( Image * image, imageLayout_t newLayout, barrierFlags_t flags ) {
+	if ( m_pipelineState.renderPassState.color == image || m_pipelineState.renderPassState.depth == image ) {
+		EndRenderPass();
+	}
+	VkImageMemoryBarrier barrier = {};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	const bool discard = ( flags & BARRIER_DISCARD_AND_IGNORE_OLD_LAYOUT ) != 0;
+	VkPipelineStageFlags srcPipelineStage;
+	if ( discard == true ) {
+		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		barrier.srcAccessMask = 0;
+		srcPipelineStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+	} else {
+		TranslateImageLayout( image->GetLayout(), barrier.oldLayout, barrier.srcAccessMask, srcPipelineStage );
+	}
+	VkPipelineStageFlags dstPipelineStage;
+	TranslateImageLayout( newLayout, barrier.newLayout, barrier.dstAccessMask, dstPipelineStage );
+	barrier.subresourceRange.aspectMask = TranslateFormatToAspect( image->GetFormat() );
+	barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+	barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+	barrier.image = image->GetImage();
+	vkCmdPipelineBarrier( m_commandBuffer, srcPipelineStage, dstPipelineStage, 0, 0, NULL, 0, NULL, 1, &barrier );
 }

@@ -334,6 +334,8 @@ void Renderer_Init() {
 
 	CreateSynchronizationPrimitives();
 
+	InitializeStagingBuffer();
+
 	CreateRenderTargets();
 
 	CreateUnifiedPipelineLayout();
@@ -341,8 +343,6 @@ void Renderer_Init() {
 	CreateDescriptorPool();
 
 	CreateSamplers();
-
-	InitializeStagingBuffer();
 }
 
 void Renderer_BeginFrame() {

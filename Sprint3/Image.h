@@ -8,13 +8,14 @@ enum imageFormat_t {
 	IMAGE_FORMAT_DEPTH,
 };
 
-enum imageUsageFlags_t {
-	IMAGE_USAGE_RENDER_TARGET	= BIT( 0 ),
-	IMAGE_USAGE_SHADER			= BIT( 1 ),
+VkImageAspectFlags TranslateFormatToAspect( imageFormat_t format );
+
+enum imageLayout_t {
+	IMAGE_LAYOUT_FRAGMENT_SHADER_READ,
+	IMAGE_LAYOUT_COLOR_ATTACHMENT,
+	IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT,
+	IMAGE_LAYOUT_PRESENT,
 };
-inline imageUsageFlags_t operator |( imageUsageFlags_t left, imageUsageFlags_t right ) {
-	return ( imageUsageFlags_t )( ( int )left | ( int )right );
-}
 
 class Swapchain;
 
@@ -29,12 +30,18 @@ public:
 	VkImage GetImage() const { return m_image; }
 	VkImageView GetView() const { return m_imageView; }
 	void SelectSwapchainImage( uint32_t index );
+	imageLayout_t GetLayout() const { return m_layout; }
+	void SetLayout( imageLayout_t layout ) { m_layout = layout; }
+	bool IsColor() const;
+	bool IsDepth() const;
+	VkImage GetSwapchainImage( uint32_t index ) { return m_swapchainImages[ index ]; }
 
 private:
 	imageFormat_t m_format;
 	VkImage m_image = VK_NULL_HANDLE;
 	allocation_t m_memory = {};
 	VkImageView m_imageView = VK_NULL_HANDLE;
+	imageLayout_t m_layout = {};
 
 	uint32_t m_width = 0;
 	uint32_t m_height = 0;

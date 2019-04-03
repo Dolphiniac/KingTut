@@ -317,10 +317,12 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 		context->BindDescriptorSet( meshSet );
 		context->Draw( cube, meshShader );
 		Renderer_AcquireSwapchainImage();
+		context->PipelineBarrier( colorImage, IMAGE_LAYOUT_FRAGMENT_SHADER_READ, BARRIER_NONE );
 		context->SetRenderTargets( swapchainImage, NULL );
 		context->SetViewportAndScissor( swapchainImage->GetWidth(), swapchainImage->GetHeight() );
 		context->BindDescriptorSet( triSet );
 		context->Draw( tri, triShader );
+		context->PipelineBarrier( swapchainImage, IMAGE_LAYOUT_PRESENT, BARRIER_NONE );
 		Renderer_EndFrame();
 	}
 }

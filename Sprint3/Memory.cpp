@@ -77,6 +77,54 @@ void BeginStagingFrame() {
 	stagingBuffer.inFrame = true;
 }
 
+void InitializeImageLayout( Image * image, imageUsageFlags_t usage ) {
+	VkImageMemoryBarrier barrier = {};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.srcAccessMask = 0;
+	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	barrier.image = image->GetImage();
+	barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	if ( ( usage & IMAGE_USAGE_RENDER_TARGET ) != 0 ) {
+		if ( image->IsDepth() == true ) {
+			barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			image->SetLayout( IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT );
+		} else {
+			barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			image->SetLayout( IMAGE_LAYOUT_COLOR_ATTACHMENT );
+		}
+	} else {
+		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		image->SetLayout( IMAGE_LAYOUT_FRAGMENT_SHADER_READ );
+	}
+	if ( image->IsDepth() == true ) {
+		barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
+	}
+	if ( image->IsColor() == true ) {
+		barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_COLOR_BIT;
+	}
+	barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+	barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+	vkCmdPipelineBarrier( stagingBuffer.commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, NULL, 0, NULL, 1, &barrier );
+}
+
+void InitializeSwapchainImageLayout( Image * image ) {
+	VkImageMemoryBarrier barriers[ SWAPCHAIN_IMAGE_COUNT ] = {};
+	for ( uint32_t i = 0; i < SWAPCHAIN_IMAGE_COUNT; ++i ) {
+		VkImageMemoryBarrier & barrier = barriers[ i ];
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		barrier.image = image->GetSwapchainImage( i );
+		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+		barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+	}
+	image->SetLayout( IMAGE_LAYOUT_PRESENT );
+	vkCmdPipelineBarrier( stagingBuffer.commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, NULL, 0, NULL, SWAPCHAIN_IMAGE_COUNT, barriers );
+}
+
 void EndStagingFrame() {
 	VK_CHECK( vkEndCommandBuffer( stagingBuffer.commandBuffer ) );
 	stagingBuffer.inFrame = false;

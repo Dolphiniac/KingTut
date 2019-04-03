@@ -31,7 +31,7 @@ static VkImageUsageFlags TranslateUsage( imageUsageFlags_t usage, imageFormat_t 
 	return result;
 }
 
-static VkImageAspectFlags TranslateFormatToAspect( imageFormat_t format ) {
+VkImageAspectFlags TranslateFormatToAspect( imageFormat_t format ) {
 	VkImageAspectFlags result = 0;
 	if ( format == IMAGE_FORMAT_DEPTH ) {
 		result |= VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -83,6 +83,7 @@ Image * Image::Create( uint32_t width, uint32_t height, imageFormat_t format, im
 	viewCreateInfo.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
 	viewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 	VK_CHECK( vkCreateImageView( renderObjects.device, &viewCreateInfo, NULL, &result->m_imageView ) );
+	InitializeImageLayout( result, usage );
 
 	return result;
 }
@@ -114,6 +115,7 @@ Image * Image::CreateFromSwapchain() {
 		viewCreateInfo.image = result->m_swapchainImages[ i ];
 		VK_CHECK( vkCreateImageView( renderObjects.device, &viewCreateInfo, NULL, &result->m_swapchainViews[ i ] ) );
 	}
+	InitializeSwapchainImageLayout( result );
 
 	return result;
 }
@@ -127,6 +129,7 @@ Image * Image::CreateFromFile( const char * filename ) {
 	VkMemoryRequirements requirements;
 	vkGetImageMemoryRequirements( renderObjects.device, result->GetImage(), &requirements );
 	StageImageData( imageData, x * y * 4, ( uint32_t )requirements.alignment, result );
+	result->SetLayout( IMAGE_LAYOUT_FRAGMENT_SHADER_READ );	// This is the layout in which the stager will leave the image
 	stbi_image_free( imageData );
 
 	return result;
@@ -135,4 +138,12 @@ Image * Image::CreateFromFile( const char * filename ) {
 void Image::SelectSwapchainImage( uint32_t index ) {
 	m_image = m_swapchainImages[ index ];
 	m_imageView = m_swapchainViews[ index ];
+}
+
+bool Image::IsColor() const {
+	return IsDepth() == false;
+}
+
+bool Image::IsDepth() const {
+	return m_format == IMAGE_FORMAT_DEPTH;
 }
