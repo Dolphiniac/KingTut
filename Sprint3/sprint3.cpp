@@ -269,7 +269,7 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 	Matrix44 projection = {
 		f / aspect, 0.0f, 0.0f, 0.0f,
 		0.0f, f, 0.0f, 0.0f,
-		0.0f, 0.0f, ( farZ + nearZ ) / ( nearZ - farZ ), -1.0f,
+		0.0f, 0.0f, -( farZ + nearZ ) / ( nearZ - farZ ), 1.0f,
 		0.0f, 0.0f, ( 2.0f * farZ * nearZ ) / ( nearZ - farZ ), 0.0f
 	};
 
@@ -284,7 +284,7 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 		1.0f, 0.0f, 0.0f, 0.0f,
 		0.0f, 1.0f, 0.0f, 0.0f,
 		0.0f, 0.0f, 1.0f, 0.0f,
-		0.0f, 0.0f, 0.0f, 1.0f
+		1.5f, 0.0f, 3.0f, 1.0f
 	};
 
 	Buffer * projectionBuffer = Buffer::Create( &projection, sizeof( projection ) );

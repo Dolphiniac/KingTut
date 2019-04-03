@@ -292,7 +292,7 @@ static VkPipeline CreatePipeline( const pipelineDescription_t & pipelineState ) 
 	pipelineCreateInfo.pMultisampleState = &multisampleState;
 	VkPipelineRasterizationStateCreateInfo rasterizationState = {};
 	rasterizationState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-	rasterizationState.cullMode = VK_CULL_MODE_NONE;
+	rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;
 	rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	rasterizationState.lineWidth = 1.0f;
 	rasterizationState.polygonMode = VK_POLYGON_MODE_FILL;
