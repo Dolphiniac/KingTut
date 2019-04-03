@@ -346,6 +346,8 @@ void Renderer_Init() {
 }
 
 void Renderer_BeginFrame() {
+	extern void PumpMessages();
+	PumpMessages();
 	VK_CHECK( vkWaitForFences( renderObjects.device, 1, &renderObjects.renderFence, VK_TRUE, INFINITE ) );
 	VK_CHECK( vkResetFences( renderObjects.device, 1, &renderObjects.renderFence ) );
 
