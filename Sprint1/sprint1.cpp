@@ -62,8 +62,8 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 	}
 
 	{
-	// Some extensions are required to get anything on screen.  As far as the instance is concerned, we have
-	// to have the generic surface extension, as well as the platform-specific surface extension, in this case, Win32
+		// Some extensions are required to get anything on screen.  As far as the instance is concerned, we have
+		// to have the generic surface extension, as well as the platform-specific surface extension, in this case, Win32
 		const char * instanceExtensionNames[] = {
 			VK_KHR_SURFACE_EXTENSION_NAME,
 			VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
@@ -75,10 +75,6 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 			"VK_LAYER_LUNARG_standard_validation",
 	#endif
 		};
-		uint32_t propCount;
-		vkEnumerateInstanceLayerProperties( &propCount, NULL );
-		VkLayerProperties * props = new VkLayerProperties[ propCount ];
-		vkEnumerateInstanceLayerProperties( &propCount, props );
 
 		VkApplicationInfo appInfo = {};	// We start each struct with "= {}" to zero-initialize all bytes.  We could also do a memset here, but "= {}" is more concise.
 		// sType, common to almost all "info" structs, identifies the structure using an enum value.
