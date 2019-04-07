@@ -15,8 +15,8 @@ static void CreateInstance() {
 	};
 	extern const char * GetPlatformSurfaceExtensionName();
 	instanceExtensionNames.push_back( GetPlatformSurfaceExtensionName() );
-	const char * instanceLayerNames[] = {
-#if !defined( NDEBUG )
+	std::vector< const char * > instanceLayerNames = {
+#if defined( _DEBUG )
 		"VK_LAYER_LUNARG_standard_validation",
 #endif
 	};
@@ -31,8 +31,8 @@ static void CreateInstance() {
 
 	VkInstanceCreateInfo instanceCreateInfo = {};
 	instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-	instanceCreateInfo.enabledLayerCount = ARRAY_COUNT( instanceLayerNames );
-	instanceCreateInfo.ppEnabledLayerNames = instanceLayerNames;
+	instanceCreateInfo.enabledLayerCount = ( uint32_t )instanceLayerNames.size();
+	instanceCreateInfo.ppEnabledLayerNames = instanceLayerNames.data();
 	instanceCreateInfo.enabledExtensionCount = ( uint32_t )instanceExtensionNames.size();
 	instanceCreateInfo.ppEnabledExtensionNames = instanceExtensionNames.data();
 	VK_CHECK( vkCreateInstance( &instanceCreateInfo, NULL, &renderObjects.instance ) );
@@ -132,7 +132,7 @@ static void CreateSwapchain() {
 	swapchainCreateInfo.imageColorSpace = surfaceFormats[ 0 ].colorSpace;	// These are truly unimportant.  What you'll normally get is an SRGB nonlinear color space, and a BGRA8 format.  These are fine
 	swapchainCreateInfo.imageExtent = renderObjects.swapchainExtent;
 	swapchainCreateInfo.imageArrayLayers = 1;
-	swapchainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	swapchainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	swapchainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	swapchainCreateInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;	// We can expect the surface to support this capability
 	swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;	// Same as above
@@ -167,7 +167,7 @@ static void CreateSynchronizationPrimitives() {
 }
 
 static void CreateRenderTargets() {
-	renderObjects.colorImage = Image::Create( 1920, 1080, IMAGE_FORMAT_RGBA8, IMAGE_USAGE_RENDER_TARGET );
+	renderObjects.colorImage = Image::Create( 1920, 1080, IMAGE_FORMAT_RGBA8, IMAGE_USAGE_RENDER_TARGET | IMAGE_USAGE_TRANSFER_SRC );
 	renderObjects.depthImage = Image::Create( 1920, 1080, IMAGE_FORMAT_DEPTH, IMAGE_USAGE_RENDER_TARGET );
 	renderObjects.swapchainImage = Image::CreateFromSwapchain();
 }

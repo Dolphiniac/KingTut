@@ -21,6 +21,12 @@ static VkImageUsageFlags TranslateUsage( imageUsageFlags_t usage, imageFormat_t 
 			result |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 		}
 	}
+	if ( ( usage & IMAGE_USAGE_TRANSFER_SRC ) != 0 ) {
+		result |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	}
+	if ( ( usage & IMAGE_USAGE_TRANSFER_DST ) != 0 ) {
+		result |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	}
 	return result;
 }
 

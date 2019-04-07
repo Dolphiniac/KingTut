@@ -10,7 +10,12 @@ enum imageFormat_t {
 
 enum imageUsageFlags_t {
 	IMAGE_USAGE_RENDER_TARGET	= BIT( 0 ),
+	IMAGE_USAGE_TRANSFER_SRC	= BIT( 1 ),
+	IMAGE_USAGE_TRANSFER_DST	= BIT( 2 ),
 };
+inline imageUsageFlags_t operator |( imageUsageFlags_t left, imageUsageFlags_t right ) {
+	return ( imageUsageFlags_t )( ( int )left | ( int )right );
+}
 
 class Swapchain;
 
