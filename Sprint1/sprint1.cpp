@@ -103,8 +103,8 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 	}
 
 	{
-	// We must select a physical device (essentially a GPU) as the backing hardware for a logical device on which
-	// to run commands, create resources, and allocate memory
+		// We must select a physical device (essentially a GPU) as the backing hardware for a logical device on which
+		// to run commands, create resources, and allocate memory
 		uint32_t physicalDeviceCount;
 		VkResult result = vkEnumeratePhysicalDevices( barebonesRenderer.instance, &physicalDeviceCount, NULL );
 		VkPhysicalDevice * allPhysicalDevices = new VkPhysicalDevice[ physicalDeviceCount ];
@@ -137,8 +137,8 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 	}
 
 	{
-	// We need a graphics/compute/transfer queue.  To get this queue, we need to find the family that has the proper capabilities
-	// and add a VkDeviceQueueCreateInfo that creates a queue from this family to the VkDeviceCreateInfo.
+		// We need a graphics/compute/transfer queue.  To get this queue, we need to find the family that has the proper capabilities
+		// and add a VkDeviceQueueCreateInfo that creates a queue from this family to the VkDeviceCreateInfo.
 		uint32_t queueFamilyCount;
 		vkGetPhysicalDeviceQueueFamilyProperties( barebonesRenderer.physicalDevice, &queueFamilyCount, NULL );
 		VkQueueFamilyProperties * queueFamilyProperties = new VkQueueFamilyProperties[ queueFamilyCount ];
@@ -305,7 +305,7 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 		attachmentDescription.storeOp = VK_ATTACHMENT_STORE_OP_STORE;	// Store the contents upon ending the pass
 		attachmentDescription.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;	// Not necessary for a color attachment
 		attachmentDescription.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;	// When beginning the pass, it will be transferred to this layout (optimal for rendering)
+		attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;	// When beginning the pass, it will expect the attachment to be in this layout (UNDEFINED means force transition to subpass layout and discard the contents)
 		attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;	// When ending the pass, it will be transferred to this layout (able to be presented to screen)
 		VkAttachmentReference colorAttachmentReference = {};
 		colorAttachmentReference.attachment = 0;	// The attachment will be the first in the framebuffer
