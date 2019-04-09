@@ -2,8 +2,6 @@
 #include "Image.h"
 #include "CommandContext.h"
 #include <vector>
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 
 renderObjects_t renderObjects;
 
@@ -13,6 +11,8 @@ static void CreateInstance() {
 	std::vector< const char * > instanceExtensionNames = {
 		VK_KHR_SURFACE_EXTENSION_NAME,
 	};
+	// Platform-specific code can be protected by an externally linked callback, so we'll do that here, since one of the instance layers is a platform surface extension.
+	// Because this is only used in one place, it doesn't need to be declared in a header, just forward declared here.
 	extern const char * GetPlatformSurfaceExtensionName();
 	instanceExtensionNames.push_back( GetPlatformSurfaceExtensionName() );
 	std::vector< const char * > instanceLayerNames = {
@@ -47,7 +47,6 @@ static void GetPhysicalDevice() {
 		0x1022,
 		0x1002, // AMD
 		0x10DE, // NVIDIA
-		8086, // Intel
 	};
 	for ( uint32_t i = 0; i < physicalDeviceCount; ++i ) {
 		VkPhysicalDeviceProperties props;
@@ -143,7 +142,8 @@ static void CreateSwapchain() {
 	delete[] surfaceFormats;
 }
 
-static void CreateCommandBuffers() {
+static void CreateCommandContexts() {
+	// We still only need one command pool, since we're single-threaded (generally, multithreading and differing queue capabilities are the reasons for separate pools)
 	VkCommandPoolCreateInfo commandPoolCreateInfo = {};
 	commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	commandPoolCreateInfo.queueFamilyIndex = renderObjects.queueFamilyIndex;
@@ -155,11 +155,17 @@ static void CreateCommandBuffers() {
 }
 
 static void CreateSynchronizationPrimitives() {
+	// We use a single render fence to reset our CommandContext.  We can have as many contexts as we want, and one fence will suffice, because it
+	// covers the whole frame.  The main reason we would have another fence would be to have a ring buffer of contexts, one fence for each
+	// frame potentially in flight.
 	VkFenceCreateInfo fenceCreateInfo = {};
 	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+	fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;	// Using this flag lets the render loop avoid using different "first frame" logic for waiting on a fence
 	VK_CHECK( vkCreateFence( renderObjects.device, &fenceCreateInfo, NULL, &renderObjects.renderFence ) );
 
+	// The semaphores we have here are the boilerplate semaphores required by basically any Vulkan app.
+	// One has to synchronize the swapchain image acquire to the submit that uses the image.
+	// The other synchronizes the submit that fills out the swapchain image to the frame present.
 	VkSemaphoreCreateInfo semaphoreCreateInfo = {};
 	semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 	VK_CHECK( vkCreateSemaphore( renderObjects.device, &semaphoreCreateInfo, NULL, &renderObjects.imageAcquireSemaphore ) );
@@ -167,12 +173,15 @@ static void CreateSynchronizationPrimitives() {
 }
 
 static void CreateRenderTargets() {
+	// We introduce color and depth as proofs of concept on which to put our "real" rendering.  Color will be copied to swapchain later.
 	renderObjects.colorImage = Image::Create( 1920, 1080, IMAGE_FORMAT_RGBA8, IMAGE_USAGE_RENDER_TARGET | IMAGE_USAGE_TRANSFER_SRC );
 	renderObjects.depthImage = Image::Create( 1920, 1080, IMAGE_FORMAT_DEPTH, IMAGE_USAGE_RENDER_TARGET );
 	renderObjects.swapchainImage = Image::CreateFromSwapchain();
 }
 
 static void CreateStubPipelineLayout() {
+	// One pipeline layout for the renderer means we don't have to deal with dynamically changing requirements for shaders.
+	// This Sprint doesn't have resources at all (still using shader logic only), so the layout can just be empty.
 	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
 	pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	VkResult result = vkCreatePipelineLayout( renderObjects.device, &pipelineLayoutCreateInfo, NULL, &renderObjects.emptyLayout );
@@ -185,12 +194,14 @@ void Renderer_Init() {
 
 	CreateDevice();
 
-	extern void CreateSurface();
+	extern void CreateSurface();	// Like the platform extension name, creating the surface is platform-specific, so we guard it in a separate file
 	CreateSurface();
 
 	CreateSwapchain();
 
-	CreateCommandBuffers();
+	// Our essential design philosophy with these last functions is that although we can create arbitrary numbers of each thing, we have an engine-
+	// defined set of resources from which we draw.  We hardcode the resources into the renderer to reduce complexity.
+	CreateCommandContexts();
 
 	CreateSynchronizationPrimitives();
 
@@ -200,32 +211,39 @@ void Renderer_Init() {
 }
 
 void Renderer_BeginFrame() {
-	VK_CHECK( vkWaitForFences( renderObjects.device, 1, &renderObjects.renderFence, VK_TRUE, INFINITE ) );
+	// Each frame, we wait for the fence (first frame, the wait is a NOP because it's signaled on creation), then reset it and start the command buffer.
+	// The fence will be passed to the submit call so that it will be signaled when the buffer is finished executing.  Waiting for the fence here
+	// ensures that the command context is finished (not in use) when we try to start recording to it again.
+	VK_CHECK( vkWaitForFences( renderObjects.device, 1, &renderObjects.renderFence, VK_TRUE, VK_FOREVER ) );
 	VK_CHECK( vkResetFences( renderObjects.device, 1, &renderObjects.renderFence ) );
 
+	// Start recording.  Essentially, any calls on the context between BeginFrame and EndFrame will be executed when EndFrame is called
 	renderObjects.commandContext->Begin();
 }
 
 void Renderer_AcquireSwapchainImage() {
-	VK_CHECK( vkAcquireNextImageKHR( renderObjects.device, renderObjects.swapchain, INFINITE, renderObjects.imageAcquireSemaphore, VK_NULL_HANDLE, &renderObjects.swapchainImageIndex ) );
+	// Passing the acquire semaphore to be signaled when the swapchain image is ready.  It will be waited on by the submit
+	VK_CHECK( vkAcquireNextImageKHR( renderObjects.device, renderObjects.swapchain, VK_FOREVER, renderObjects.imageAcquireSemaphore, VK_NULL_HANDLE, &renderObjects.swapchainImageIndex ) );
 
+	// Switch the "active" image on the swapchain image to the one indicated by the index
 	renderObjects.swapchainImage->SelectSwapchainImage( renderObjects.swapchainImageIndex );
 }
 
 void Renderer_EndFrame() {
+	// Stop recording the context
 	renderObjects.commandContext->End();
 
 	VkSubmitInfo submitInfo = {};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	VkPipelineStageFlags waitStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+	VkPipelineStageFlags waitStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 	VkCommandBuffer commandBuffer = renderObjects.commandContext->GetCommandBuffer();
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &commandBuffer;
 	submitInfo.waitSemaphoreCount = 1;
-	submitInfo.pWaitSemaphores = &renderObjects.imageAcquireSemaphore;
-	submitInfo.pWaitDstStageMask = &waitStageMask;
+	submitInfo.pWaitSemaphores = &renderObjects.imageAcquireSemaphore;	// Wait on the acquire
+	submitInfo.pWaitDstStageMask = &waitStageMask;	// At the first command of the queue
 	submitInfo.signalSemaphoreCount = 1;
-	submitInfo.pSignalSemaphores = &renderObjects.renderCompleteSemaphore;
+	submitInfo.pSignalSemaphores = &renderObjects.renderCompleteSemaphore;	// Signal a semaphore to be waited on before the present occurs
 	VK_CHECK( vkQueueSubmit( renderObjects.queue, 1, &submitInfo, renderObjects.renderFence ) );
 
 	VkPresentInfoKHR presentInfo = {};
@@ -234,6 +252,6 @@ void Renderer_EndFrame() {
 	presentInfo.pSwapchains = &renderObjects.swapchain;
 	presentInfo.pImageIndices = &renderObjects.swapchainImageIndex;
 	presentInfo.waitSemaphoreCount = 1;
-	presentInfo.pWaitSemaphores = &renderObjects.renderCompleteSemaphore;
+	presentInfo.pWaitSemaphores = &renderObjects.renderCompleteSemaphore;	// Wait for the rendering to be done before performing the present
 	VK_CHECK( vkQueuePresentKHR( renderObjects.queue, &presentInfo ) );
 }

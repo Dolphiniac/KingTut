@@ -5,6 +5,7 @@
 
 static std::vector< renderPassDescription_t > createdPasses;
 
+// Translate the render pass description to a new render pass, store it, and return it.
 static VkRenderPass CreateRenderPass( const renderPassDescription_t & description ) {
 	renderPassDescription_t newDesc = description;
 	VkRenderPassCreateInfo renderPassCreateInfo = {};
@@ -18,7 +19,7 @@ static VkRenderPass CreateRenderPass( const renderPassDescription_t & descriptio
 	if ( newDesc.useColor == true ) {
 		VkAttachmentDescription & attachmentDescription = attachmentDescriptions[ 0 ];
 		attachmentDescription = {};
-		attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;	// Discard contents and force the layout transition.  This is unsafe, but we'll fix it in Sprint 3.
 		attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 		attachmentDescription.format = TranslateFormat( description.colorFormat );
 		attachmentDescription.loadOp = newDesc.clearColor ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
@@ -33,7 +34,7 @@ static VkRenderPass CreateRenderPass( const renderPassDescription_t & descriptio
 	if ( newDesc.useDepth == true ) {
 		VkAttachmentDescription & attachmentDescription = attachmentDescriptions[ newDesc.useColor ? 1 : 0 ];
 		attachmentDescription = {};
-		attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;	// Same as for color.
 		attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 		attachmentDescription.format = TranslateFormat( description.depthFormat );
 		attachmentDescription.loadOp = newDesc.clearDepth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
@@ -60,7 +61,7 @@ static VkRenderPass CreateRenderPass( const renderPassDescription_t & descriptio
 	
 	VK_CHECK( vkCreateRenderPass( renderObjects.device, &renderPassCreateInfo, NULL, &newDesc.renderPass ) );
 
-	createdPasses.push_back( newDesc );
+	createdPasses.push_back( newDesc );	// Save the new pass
 	return newDesc.renderPass;
 }
 
@@ -95,6 +96,7 @@ struct framebufferDescription_t {
 
 std::vector< framebufferDescription_t > createdFramebuffers;
 
+// Create a new framebuffer from the description, store it, and return it.
 static VkFramebuffer CreateFramebuffer( const framebufferDescription_t & description, VkRenderPass renderPass ) {
 	framebufferDescription_t newDesc = description;
 
@@ -149,7 +151,7 @@ void CommandContext::Begin() {
 
 void CommandContext::End() {
 	if ( m_inRenderPass == true ) {
-		vkCmdEndRenderPass( m_commandBuffer );
+		vkCmdEndRenderPass( m_commandBuffer );	// Any begun render pass must be ended
 	}
 	VK_CHECK( vkEndCommandBuffer( m_commandBuffer ) );
 }
@@ -167,6 +169,7 @@ void CommandContext::SetRenderTargets( const Image * colorTarget, const Image * 
 		renderPassDescription.depthFormat = depthStencilTarget->GetFormat();
 	}
 	VkRenderPass renderPass = VK_NULL_HANDLE;
+	// Find the render pass if it's been created already.
 	for ( size_t i = 0; i < createdPasses.size(); ++i ) {
 		if ( renderPassDescription == createdPasses[ i ] ) {
 			renderPass = createdPasses[ i ].renderPass;
@@ -175,6 +178,7 @@ void CommandContext::SetRenderTargets( const Image * colorTarget, const Image * 
 	}
 	m_pipelineState.renderPassState = renderPassDescription;
 	if ( renderPass == VK_NULL_HANDLE ) {
+		// If it does not exist already, create it.
 		renderPass = CreateRenderPass( renderPassDescription );
 	}
 
@@ -194,6 +198,7 @@ void CommandContext::SetRenderTargets( const Image * colorTarget, const Image * 
 		framebufferDescription.depthStencilView = depthStencilTarget->GetView();
 	}
 	VkFramebuffer framebuffer = VK_NULL_HANDLE;
+	// Find the framebuffer if it's already been created.
 	for ( size_t i = 0; i < createdFramebuffers.size(); ++i ) {
 		if ( framebufferDescription == createdFramebuffers[ i ] ) {
 			framebuffer = createdFramebuffers[ i ].framebuffer;
@@ -201,12 +206,13 @@ void CommandContext::SetRenderTargets( const Image * colorTarget, const Image * 
 		}
 	}
 	if ( framebuffer == VK_NULL_HANDLE ) {
+		// If it does not exist already, create it.
 		framebuffer = CreateFramebuffer( framebufferDescription, renderPass );
 	}
 	m_framebuffer = framebuffer;	// Caching this so render passes can be re-begun
 
 	if ( m_inRenderPass == true ) {
-		vkCmdEndRenderPass( m_commandBuffer );
+		vkCmdEndRenderPass( m_commandBuffer );	// We assume that we're not restarting the same render pass
 	}
 
 	VkRenderPassBeginInfo renderPassBeginInfo = {};
@@ -222,12 +228,14 @@ void CommandContext::SetRenderTargets( const Image * colorTarget, const Image * 
 }
 
 void CommandContext::SetViewportAndScissor( uint32_t width, uint32_t height ) {
+	// We just set state here.  It'll be committed on draw.
 	m_viewportAndScissorWidth = width;
 	m_viewportAndScissorHeight = height;
 }
 
 static std::vector< pipelineDescription_t > createdPipelines;
 
+// Create a new pipeline, store it, and return it.
 static VkPipeline CreatePipeline( const pipelineDescription_t & pipelineState ) {
 	pipelineDescription_t description = pipelineState;
 
@@ -257,6 +265,7 @@ static VkPipeline CreatePipeline( const pipelineDescription_t & pipelineState ) 
 	inputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
 	inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	pipelineCreateInfo.pInputAssemblyState = &inputAssemblyState;
+	// Expect a single vertex buffer binding with 3 interleaved attributes.
 	VkPipelineVertexInputStateCreateInfo vertexInputState = {};
 	vertexInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 	VkVertexInputBindingDescription vertexInputBinding = {};
@@ -267,15 +276,15 @@ static VkPipeline CreatePipeline( const pipelineDescription_t & pipelineState ) 
 	vertexInputState.pVertexBindingDescriptions = &vertexInputBinding;
 	VkVertexInputAttributeDescription vertexInputAttributes[ 3 ] = {};
 	vertexInputAttributes[ 0 ].binding = 0;
-	vertexInputAttributes[ 0 ].format = VK_FORMAT_R32G32B32_SFLOAT;
+	vertexInputAttributes[ 0 ].format = VK_FORMAT_R32G32B32_SFLOAT;	// 3 signed floats for position
 	vertexInputAttributes[ 0 ].location = 0;
 	vertexInputAttributes[ 0 ].offset = offsetof( vertex_t, position );
 	vertexInputAttributes[ 1 ].binding = 0;
-	vertexInputAttributes[ 1 ].format = VK_FORMAT_R32G32_SFLOAT;
+	vertexInputAttributes[ 1 ].format = VK_FORMAT_R32G32_SFLOAT;	// 2 signed floats for texture coordinates
 	vertexInputAttributes[ 1 ].location = 1;
 	vertexInputAttributes[ 1 ].offset = offsetof( vertex_t, uv );
 	vertexInputAttributes[ 2 ].binding = 0;
-	vertexInputAttributes[ 2 ].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	vertexInputAttributes[ 2 ].format = VK_FORMAT_R32G32B32A32_SFLOAT; // 4 floats for color
 	vertexInputAttributes[ 2 ].location = 2;
 	vertexInputAttributes[ 2 ].offset = offsetof( vertex_t, color );
 	vertexInputState.vertexAttributeDescriptionCount = 3;
@@ -296,9 +305,12 @@ static VkPipeline CreatePipeline( const pipelineDescription_t & pipelineState ) 
 	rasterizationState.polygonMode = VK_POLYGON_MODE_FILL;
 	pipelineCreateInfo.pRasterizationState = &rasterizationState;
 	pipelineCreateInfo.pTessellationState = NULL;
+	// Viewport and scissor will be set using vkCmd calls, so we leave them empty here.
 	VkPipelineViewportStateCreateInfo viewportState = {};
 	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
 	pipelineCreateInfo.pViewportState = &viewportState;
+	// Dynamic state means that an option won't be set on the pipeline (reducing pipeline permutations), but it must be set on the VkCommandBuffer.
+	// We make viewport and scissor dynamic so that pipelines don't permute based on the size of the attachment.
 	VkPipelineDynamicStateCreateInfo dynamicState = {};
 	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
 	VkDynamicState dynamicStates[] = {
@@ -333,6 +345,7 @@ static VkPipeline CreatePipeline( const pipelineDescription_t & pipelineState ) 
 void CommandContext::Draw( const Mesh * mesh, const ShaderProgram * shader ) {
 	m_pipelineState.shader = shader;
 	VkPipeline pipeline = VK_NULL_HANDLE;
+	// Find the pipeline if it has been created.
 	for ( size_t i = 0; i < createdPipelines.size(); ++i ) {
 		if ( m_pipelineState == createdPipelines[ i ] ) {
 			pipeline = createdPipelines[ i ].pipeline;
@@ -340,10 +353,13 @@ void CommandContext::Draw( const Mesh * mesh, const ShaderProgram * shader ) {
 		}
 	}
 	if ( pipeline == VK_NULL_HANDLE ) {
+		// Create the pipeline if it does not already exist.
 		pipeline = CreatePipeline( m_pipelineState );
 	}
 
+	// Some state is committed at this time.  First, the pipeline.
 	vkCmdBindPipeline( m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline );
+	// Then, the dynamic viewport.
 	VkViewport viewport = {};
 	viewport.minDepth = 0.0f;
 	viewport.maxDepth = 1.0f;
@@ -351,19 +367,23 @@ void CommandContext::Draw( const Mesh * mesh, const ShaderProgram * shader ) {
 	viewport.height = ( float )m_viewportAndScissorHeight;
 	vkCmdSetViewport( m_commandBuffer, 0, 1, &viewport );
 
+	// Next, the dynamic scissor.
 	VkRect2D scissor = {};
 	scissor.extent.width = m_viewportAndScissorWidth;
 	scissor.extent.height = m_viewportAndScissorHeight;
 	vkCmdSetScissor( m_commandBuffer, 0, 1, &scissor );
+	// Then, we bind the vertex and index buffers from the mesh.
 	VkBuffer vertexBuffer = mesh->GetVertexBuffer();
 	VkDeviceSize offset = 0;
 	vkCmdBindVertexBuffers( m_commandBuffer, 0, 1, &vertexBuffer, &offset );
 	VkBuffer indexBuffer = mesh->GetIndexBuffer();
 	vkCmdBindIndexBuffer( m_commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16 );
+	// Finally, we draw using the index count on the mesh.
 	vkCmdDrawIndexed( m_commandBuffer, mesh->GetIndexCount(), 1, 0, 0, 0 );
 }
 
 void CommandContext::Clear( bool doClearColor, bool doClearDepth, float clearR, float clearG, float clearB, float clearA, float clearDepth ) {
+	// Whether we clear permutes render pass state (because the clear load op is on the render pass), so we modify the description and find/create the corresponding pass.
 	m_pipelineState.renderPassState.clearColor = doClearColor;
 	m_pipelineState.renderPassState.clearDepth = doClearDepth;
 	VkRenderPass renderPass = VK_NULL_HANDLE;
@@ -404,15 +424,18 @@ void CommandContext::Clear( bool doClearColor, bool doClearDepth, float clearR, 
 	beginInfo.clearValueCount = clearValueCount;
 	beginInfo.pClearValues = clearValues;
 	
+	// Beginning the new pass performs the clear based on our parameters.
 	vkCmdBeginRenderPass( m_commandBuffer, &beginInfo, VK_SUBPASS_CONTENTS_INLINE );
 }
 
 void CommandContext::Blit( const Image * src, const Image * dst ) {
+	// Blits must occur outside of a render pass, so any in flight must be ended.
 	if ( m_inRenderPass == true ) {
 		vkCmdEndRenderPass( m_commandBuffer );
 		m_inRenderPass = false;
 	}
 
+	// We only support color blits, for the whole image.
 	VkImageBlit blit = {};
 	blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	blit.srcSubresource.baseArrayLayer = 0;
@@ -426,5 +449,6 @@ void CommandContext::Blit( const Image * src, const Image * dst ) {
 	blit.dstOffsets[ 1 ].y = dst->GetHeight();
 	blit.dstOffsets[ 1 ].z = 1;
 
+	// The layouts provided here are just what the call expects.  The images aren't actualy in these layouts, which is incorrect.  We'll fix it in Sprint 3.
 	vkCmdBlitImage( m_commandBuffer, src->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR );
 }

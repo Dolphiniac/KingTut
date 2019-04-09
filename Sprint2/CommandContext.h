@@ -64,15 +64,24 @@ struct pipelineDescription_t {
 	VkPipeline pipeline = VK_NULL_HANDLE;
 };
 
+// Wraps a VkCommandBuffer.  Collects state from calls to commit at certain times.  Records commands when able.
 class CommandContext {
 public:
+	// Allocate a buffer from the pool.
 	static CommandContext * Create();
+	// Start the buffer and clear state.
 	void Begin();
+	// Finish up and stop recording.
 	void End();
+	// Set up to a single color target and depth stencil target for subsequent commands to use.
 	void SetRenderTargets( const Image * colorTarget, const Image * depthStencilTarget );
+	// Set state for viewport and scissor.
 	void SetViewportAndScissor( uint32_t width, uint32_t height );
+	// Commit state and draw the mesh with the shader.
 	void Draw( const Mesh * mesh, const ShaderProgram * shader );
+	// Clear the currently bound render targets.
 	void Clear( bool doClearColor, bool doClearDepth, float clearR, float clearG, float clearB, float clearA, float clearDepth );
+	// Copy one image to another, regardless of size, using a bilinear filter.
 	void Blit( const Image * src, const Image * dst );
 	VkCommandBuffer GetCommandBuffer() const { return m_commandBuffer; }
 

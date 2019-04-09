@@ -1,8 +1,9 @@
-#define VK_USE_PLATFORM_WIN32_KHR
+#define VK_USE_PLATFORM_WIN32_KHR	// Activate Windows-specific parts of Vulkan interface
 #include "Renderer.h"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+// Create Win32 surface and store into platform-independent VkSurfaceKHR
 void CreateSurface() {
 	HINSTANCE hInstance = GetModuleHandle( NULL );
 	char * className = "myClass";
@@ -30,6 +31,7 @@ void CreateSurface() {
 	VkResult result = vkCreateWin32SurfaceKHR( renderObjects.instance, &surfaceCreateInfo, NULL, &renderObjects.surface );
 }
 
+// Return the string that activates the Win32 surface extension
 const char * GetPlatformSurfaceExtensionName() {
 	return VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
 }

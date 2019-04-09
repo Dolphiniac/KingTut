@@ -52,21 +52,23 @@ Image * Image::Create( uint32_t width, uint32_t height, imageFormat_t format, im
 	imageCreateInfo.extent.width = width;
 	imageCreateInfo.extent.height = height;
 	imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
-	imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;	// Required starting layout.  Must be transitioned away from this layout to be used.
 	imageCreateInfo.mipLevels = 1;
 	imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-	imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;	// Images can be linearly tiled or optimally tiled.  Linear is predictable; optimal is faster.
 	imageCreateInfo.format = TranslateFormat( format );
 	imageCreateInfo.usage = TranslateUsage( usage, format );
 	VK_CHECK( vkCreateImage( renderObjects.device, &imageCreateInfo, NULL, &result->m_image ) );
 
+	// Allocate the backing memory.  Like buffers, non-swapchain images must be backed by separately allocated memory before use.
 	VkMemoryRequirements memReq;
 	vkGetImageMemoryRequirements( renderObjects.device, result->m_image, &memReq );
 
 	AllocateDeviceMemory( memReq, MEMORY_NONE, result->m_memory );
 	VK_CHECK( vkBindImageMemory( renderObjects.device, result->m_image, result->m_memory.memory, result->m_memory.offset ) );
 
+	// Create a view into the image.  Nothing weird, just the whole thing, identity swizzle, proper aspect for the type, and the same format.
 	VkImageViewCreateInfo viewCreateInfo = {};
 	viewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	viewCreateInfo.components = {
@@ -90,11 +92,13 @@ Image * Image::CreateFromSwapchain() {
 	result->m_width = renderObjects.swapchainExtent.width;
 	result->m_height = renderObjects.swapchainExtent.height;
 
+	// Retrieve the images and store them all on the Image
 	uint32_t swapchainImageCount;
 	VK_CHECK( vkGetSwapchainImagesKHR( renderObjects.device, renderObjects.swapchain, &swapchainImageCount, NULL ) );
 	assert( swapchainImageCount == SWAPCHAIN_IMAGE_COUNT );
 	VK_CHECK( vkGetSwapchainImagesKHR( renderObjects.device, renderObjects.swapchain, &swapchainImageCount, result->m_swapchainImages ) );
 
+	// Create a view for each image and store them all.
 	VkImageViewCreateInfo viewCreateInfo = {};
 	viewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	viewCreateInfo.components = {
@@ -117,6 +121,7 @@ Image * Image::CreateFromSwapchain() {
 }
 
 void Image::SelectSwapchainImage( uint32_t index ) {
+	// Select the image and view for the index.
 	m_image = m_swapchainImages[ index ];
 	m_imageView = m_swapchainViews[ index ];
 }
