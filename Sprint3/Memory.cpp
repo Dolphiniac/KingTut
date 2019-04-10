@@ -41,7 +41,6 @@ void StageImageData( void * data, uint32_t size, uint32_t alignment, const Image
 	// Transition image to transfer dst so it can be filled with data.
 	VkImageMemoryBarrier barrier = {};
 	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	barrier.srcAccessMask = 0;
 	barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 	barrier.image = targetImage->GetImage();
 	barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -53,6 +52,7 @@ void StageImageData( void * data, uint32_t size, uint32_t alignment, const Image
 	
 	VkBufferImageCopy region = {};
 	region.bufferOffset = stagingBuffer.currentOffset;
+	stagingBuffer.currentOffset += size;
 	region.imageExtent.width = targetImage->GetWidth();
 	region.imageExtent.height = targetImage->GetHeight();
 	region.imageExtent.depth = 1;

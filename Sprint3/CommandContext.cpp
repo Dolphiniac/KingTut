@@ -510,4 +510,5 @@ void CommandContext::PipelineBarrier( Image * image, imageLayout_t newLayout, ba
 	barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
 	barrier.image = image->GetImage();
 	vkCmdPipelineBarrier( m_commandBuffer, srcPipelineStage, dstPipelineStage, 0, 0, NULL, 0, NULL, 1, &barrier );
+	image->SetLayout( newLayout );
 }
