@@ -34,6 +34,7 @@
   <ItemGroup>
     <ClInclude Include="Buffer.h" />
     <ClInclude Include="CommandContext.h" />
+    <ClInclude Include="Common.h" />
     <ClInclude Include="DescriptorSet.h" />
     <ClInclude Include="Image.h" />
     <ClInclude Include="Memory.h" />

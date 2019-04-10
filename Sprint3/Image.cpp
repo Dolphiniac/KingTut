@@ -8,6 +8,9 @@ VkFormat TranslateFormat( imageFormat_t format ) {
 		case IMAGE_FORMAT_RGBA8: {
 			return VK_FORMAT_R8G8B8A8_UNORM;
 		}
+		case IMAGE_FORMAT_BGRA8: {
+			return VK_FORMAT_B8G8R8A8_UNORM;
+		}
 		case IMAGE_FORMAT_DEPTH: {
 			return VK_FORMAT_D32_SFLOAT;
 		}
@@ -23,6 +26,12 @@ static VkImageUsageFlags TranslateUsage( imageUsageFlags_t usage, imageFormat_t 
 		} else {
 			result |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 		}
+	}
+	if ( ( usage & IMAGE_USAGE_TRANSFER_SRC ) != 0 ) {
+		result |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	}
+	if ( ( usage & IMAGE_USAGE_TRANSFER_DST ) != 0 ) {
+		result |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	}
 	if ( ( usage & IMAGE_USAGE_SHADER ) != 0 ) {
 		result |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -117,10 +126,18 @@ Image * Image::CreateFromSwapchain() {
 	}
 	InitializeSwapchainImageLayout( result );
 
+	// Assuming that the swapchain will be one of these.  Good candidate for an assertion, but we'll leave it as an exercise for the reader.
+	if ( renderObjects.swapchainFormat == VK_FORMAT_R8G8B8A8_UNORM ) {
+		result->m_format = IMAGE_FORMAT_RGBA8;
+	} else if ( renderObjects.swapchainFormat == VK_FORMAT_B8G8R8A8_UNORM ) {
+		result->m_format = IMAGE_FORMAT_BGRA8;
+	}
+
 	return result;
 }
 
 Image * Image::CreateFromFile( const char * filename ) {
+	// Use stbi to get image data from the file, then create the corresponding image as a shader read image and stage the data.
 	int x;
 	int y;
 	int comp;

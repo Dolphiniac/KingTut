@@ -8,10 +8,6 @@
 #include "DescriptorSet.h"
 #include <math.h>
 
-struct Matrix44 {
-	float x[ 16 ];
-};
-
 int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd ) {
 	Renderer_Init();
 
@@ -256,11 +252,15 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 		20, 23, 21
 	};
 
+	// Fullscreen triangle for alternate blit from color to swapchain.
 	Mesh * tri = Mesh::Create( fullscreenTriVerts, sizeof( fullscreenTriVerts ), fullscreenTriIndices, sizeof( fullscreenTriIndices ), ARRAY_COUNT( fullscreenTriIndices ) );
+	// Cube mesh for perspective draw.
 	Mesh * cube = Mesh::Create( cubeVerts, sizeof( cubeVerts ), cubeIndices, sizeof( cubeIndices ), ARRAY_COUNT( cubeIndices ) );
+	// Matching shaders for above meshes.
 	ShaderProgram * triShader = ShaderProgram::Create( "simpleTri" );
 	ShaderProgram * meshShader = ShaderProgram::Create( "simpleMesh" );
 
+	// To test uniform buffers, we make MVP matrices and bind them to different descriptor scopes.
 	float nearZ = 0.2f;
 	float farZ = 100.0f;
 	float f = 1.0f / tanf( 90.0f * 3.14159f / 360.0f );
@@ -287,28 +287,41 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 		1.5f, 0.0f, 3.0f, 1.0f
 	};
 
-	Buffer * projectionBuffer = Buffer::Create( &projection, sizeof( projection ) );
-	Buffer * viewBuffer = Buffer::Create( &view, sizeof( view ) );
-	Buffer * modelBuffer = Buffer::Create( &model, sizeof( model ) );
+	// The objects to hold the data.
+	Buffer * projectionBuffer = Buffer::Create( &projection, sizeof( projection ), BUFFER_USAGE_UNIFORM_BUFFER );
+	Buffer * viewBuffer = Buffer::Create( &view, sizeof( view ), BUFFER_USAGE_UNIFORM_BUFFER );
+	Buffer * modelBuffer = Buffer::Create( &model, sizeof( model ), BUFFER_USAGE_UNIFORM_BUFFER );
 
+	// The descriptor sets that bind the resources to slots in the shaders.
 	DescriptorSet * frameSet = DescriptorSet::Allocate( DESCRIPTOR_SCOPE_FRAME );
 	DescriptorSet * viewSet = DescriptorSet::Allocate( DESCRIPTOR_SCOPE_VIEW );
 	DescriptorSet * meshSet = DescriptorSet::Allocate( DESCRIPTOR_SCOPE_MESH );
+
+	// Setting the resources on the sets as an initialization step.
 	frameSet->SetUniformBuffer( FRAME_DESCRIPTOR_UNIFORM_BUFFER_SLOT_0, projectionBuffer );
 	viewSet->SetUniformBuffer( VIEW_DESCRIPTOR_UNIFORM_BUFFER_SLOT_0, viewBuffer );
 	meshSet->SetUniformBuffer( MESH_DESCRIPTOR_UNIFORM_BUFFER_SLOT_0, modelBuffer );
+
+	// Sampled image to test texture descriptor and staging pipeline.
 	Image * vulkanImage = Image::CreateFromFile( "vulkanLogo.jpg" );
 	meshSet->SetImageSampler( MESH_DESCRIPTOR_SAMPLER_SLOT_0, SAMPLER_TYPE_LINEAR, vulkanImage );
+
+	// Sampled attachment to test mid-frame layout transition.
 	DescriptorSet * triSet = DescriptorSet::Allocate( DESCRIPTOR_SCOPE_MESH );
 	triSet->SetImageSampler( MESH_DESCRIPTOR_SAMPLER_SLOT_0, SAMPLER_TYPE_LINEAR, renderObjects.colorImage );
 
 	while ( true ) {
+		// Local pointer variables to make writing the render loop more succinct.
 		CommandContext * context = renderObjects.commandContext;
 		Image * colorImage = renderObjects.colorImage;
 		Image * depthImage = renderObjects.depthImage;
 		Image * swapchainImage = renderObjects.swapchainImage;
 
 		Renderer_BeginFrame();
+		// We bind descriptor sets at different frequencies based on scope.  In a single-view scene, frame and view
+		// sets have to be bound exactly once per context.
+		context->PipelineBarrier( colorImage, IMAGE_LAYOUT_COLOR_ATTACHMENT, BARRIER_DISCARD_AND_IGNORE_OLD_LAYOUT );
+		context->PipelineBarrier( depthImage, IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT, BARRIER_DISCARD_AND_IGNORE_OLD_LAYOUT );
 		context->BindDescriptorSet( frameSet );
 		context->BindDescriptorSet( viewSet );
 		context->SetRenderTargets( colorImage, depthImage );
@@ -317,11 +330,14 @@ int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 		context->BindDescriptorSet( meshSet );
 		context->Draw( cube, meshShader );
 		Renderer_AcquireSwapchainImage();
+		// Transition the color image to a readable state and swapchain image to writable.
 		context->PipelineBarrier( colorImage, IMAGE_LAYOUT_FRAGMENT_SHADER_READ, BARRIER_NONE );
+		context->PipelineBarrier( swapchainImage, IMAGE_LAYOUT_COLOR_ATTACHMENT, BARRIER_DISCARD_AND_IGNORE_OLD_LAYOUT );
 		context->SetRenderTargets( swapchainImage, NULL );
 		context->SetViewportAndScissor( swapchainImage->GetWidth(), swapchainImage->GetHeight() );
 		context->BindDescriptorSet( triSet );
 		context->Draw( tri, triShader );
+		// Transition the swapchain image to presentable state.
 		context->PipelineBarrier( swapchainImage, IMAGE_LAYOUT_PRESENT, BARRIER_NONE );
 		Renderer_EndFrame();
 	}

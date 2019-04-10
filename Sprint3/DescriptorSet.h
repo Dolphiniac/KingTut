@@ -2,6 +2,7 @@
 
 #include "Renderer.h"
 
+// The scope determines for how long the descriptor set is to be bound.  It plays directly into which slots are valid for a set.
 enum descriptorScope_t {
 	DESCRIPTOR_SCOPE_FRAME,
 	DESCRIPTOR_SCOPE_VIEW,
@@ -9,6 +10,8 @@ enum descriptorScope_t {
 	DESCRIPTOR_SCOPE_COUNT
 };
 
+// Slots defined as named indices per scope type so it's relatively clear where a resource goes.
+// This is a fairly clear way to describe where descriptors go without automation and metadata of some sort.
 enum frameDescriptorUniformBufferSlot_t {
 	FRAME_DESCRIPTOR_UNIFORM_BUFFER_SLOT_0,
 	FRAME_DESCRIPTOR_UNIFORM_BUFFER_SLOT_BOUND

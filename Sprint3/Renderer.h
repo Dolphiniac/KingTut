@@ -2,18 +2,38 @@
 
 #include <vulkan.h>
 #include <assert.h>
-
-#if defined( ARRAY_COUNT )
-#undef ARRAY_COUNT
-#endif
-#define ARRAY_COUNT( x ) ( sizeof( ( x ) ) / sizeof( ( x )[ 0 ] ) )
-
-#if defined( BIT )
-#undef BIT
-#endif
-#define BIT( x ) ( 1 << ( x ) )
+#include "Common.h"
 
 #define VK_CHECK( call ) assert( ( call ) == VK_SUCCESS )
+#define VK_FOREVER ( ~0U )
+
+struct Vector2 {
+	float x;
+	float y;
+};
+
+struct Vector3 {
+	float x;
+	float y;
+	float z;
+};
+
+struct Vector4 {
+	float x;
+	float y;
+	float z;
+	float w;
+};
+
+struct vertex_t {
+	Vector3 position;
+	Vector2 uv;
+	Vector4 color;
+};
+
+struct Matrix44 {
+	float x[ 16 ];
+};
 
 const uint32_t SWAPCHAIN_IMAGE_COUNT = 2;
 

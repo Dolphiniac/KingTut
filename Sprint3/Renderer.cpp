@@ -4,33 +4,14 @@
 #include "DescriptorSet.h"
 #include "Memory.h"
 #include <vector>
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 
 renderObjects_t renderObjects;
 
 #pragma comment( lib, "vulkan-1" )
 
-VkBool32 VKAPI_PTR DebugReportCallback( VkDebugReportFlagsEXT flags, 
-										VkDebugReportObjectTypeEXT objectType, 
-										uint64_t object, 
-										size_t location, 
-										int32_t messageCode, 
-										const char * pLayerPrefix, 
-										const char * pMessage, 
-										void * pUserData ) {
-	OutputDebugStringA( "VK: " );
-	OutputDebugStringA( pMessage );
-	OutputDebugStringA( "\n" );
-	return VK_TRUE;
-}
-
 static void CreateInstance() {
 	std::vector< const char * > instanceExtensionNames = {
 		VK_KHR_SURFACE_EXTENSION_NAME,
-#if defined( _DEBUG )
-		VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
-#endif
 	};
 	extern const char * GetPlatformSurfaceExtensionName();
 	instanceExtensionNames.push_back( GetPlatformSurfaceExtensionName() );
@@ -43,9 +24,9 @@ static void CreateInstance() {
 	VkApplicationInfo appInfo = {};
 	appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 	appInfo.pApplicationName = "Vulkan test app";
-	appInfo.pEngineName = "Mark II renderer";
-	appInfo.applicationVersion = VK_MAKE_VERSION( 0, 2, 0 );
-	appInfo.engineVersion = VK_MAKE_VERSION( 0, 2, 0 );
+	appInfo.pEngineName = "Mark III renderer";
+	appInfo.applicationVersion = VK_MAKE_VERSION( 0, 3, 0 );
+	appInfo.engineVersion = VK_MAKE_VERSION( 0, 3, 0 );
 	appInfo.apiVersion = VK_API_VERSION_1_0;
 
 	VkInstanceCreateInfo instanceCreateInfo = {};
@@ -55,15 +36,6 @@ static void CreateInstance() {
 	instanceCreateInfo.enabledExtensionCount = ( uint32_t )instanceExtensionNames.size();
 	instanceCreateInfo.ppEnabledExtensionNames = instanceExtensionNames.data();
 	VK_CHECK( vkCreateInstance( &instanceCreateInfo, NULL, &renderObjects.instance ) );
-#if defined( _DEBUG )
-	VkDebugReportCallbackCreateInfoEXT debugReportCallbackCreateInfo = {};
-	debugReportCallbackCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
-	debugReportCallbackCreateInfo.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_DEBUG_BIT_EXT | VK_DEBUG_REPORT_INFORMATION_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT;
-	debugReportCallbackCreateInfo.pfnCallback = DebugReportCallback;
-	VkDebugReportCallbackEXT callback;
-	PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallbackEXT = ( PFN_vkCreateDebugReportCallbackEXT )vkGetInstanceProcAddr( renderObjects.instance, "vkCreateDebugReportCallbackEXT" );
-	VK_CHECK( CreateDebugReportCallbackEXT( renderObjects.instance, &debugReportCallbackCreateInfo, NULL, &callback ) );
-#endif
 }
 
 static void GetPhysicalDevice() {
@@ -75,7 +47,6 @@ static void GetPhysicalDevice() {
 		0x1022,
 		0x1002, // AMD
 		0x10DE, // NVIDIA
-		8086, // Intel
 	};
 	for ( uint32_t i = 0; i < physicalDeviceCount; ++i ) {
 		VkPhysicalDeviceProperties props;
@@ -201,6 +172,10 @@ static void CreateRenderTargets() {
 }
 
 static void CreateUnifiedPipelineLayout() {
+	// We use a single pipeline layout for the whole renderer, so we define specific slots for the supported scopes and make the set layouts once.
+	// These set layouts are available to every pipeline, so there's wasted descriptor space if all the slots aren't used, and descriptor sets get more
+	// expensive as the greatest set of slots for each scope determines the unified layout, so this doesn't scale well.  For a larger renderer, it's a good
+	// idea to process metadata for shaders to determine the smallest layout per program.
 	VkDescriptorSetLayoutCreateInfo setLayoutCreateInfo = {};
 	setLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	std::vector< VkDescriptorSetLayoutBinding > bindings;
@@ -259,6 +234,7 @@ static void CreateUnifiedPipelineLayout() {
 static void CreateDescriptorPool() {
 	const uint32_t unifiedCount = 64 * 1024;
 
+	// Only support uniform buffers and combined image samplers.  More pool sizes would be needed for, say, compute work.
 	VkDescriptorPoolSize poolSizes[] = {
 		{
 			VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -280,6 +256,7 @@ static void CreateDescriptorPool() {
 }
 
 static void CreateSamplers() {
+	// We create global samplers for supported sampling types, then specify them by enumeration so they don't permute except by hardcoding.
 	VkSamplerCreateInfo samplerCreateInfo = {};
 	samplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 	samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
@@ -294,20 +271,22 @@ static void CreateSamplers() {
 }
 
 static void InitializeStagingBuffer() {
-	const VkDeviceSize stagingSize = 128 * 1024 * 1024;
+	const VkDeviceSize stagingSize = 128 * 1024 * 1024;	// Large staging buffer, so it can stage a bunch of resources in a single frame.
 	VkBufferCreateInfo bufferCreateInfo = {};
 	bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	bufferCreateInfo.size = stagingSize;
 	VK_CHECK( vkCreateBuffer( renderObjects.device, &bufferCreateInfo, NULL, &stagingBuffer.buffer ) );
 
+	// Allocate the memory and map.  This buffer uses persistent mapping so that we don't have to call vkMapMemory and vkUnmapMemory a bunch.
 	VkMemoryRequirements memReq;
 	vkGetBufferMemoryRequirements( renderObjects.device, stagingBuffer.buffer, &memReq );
 	AllocateDeviceMemory( memReq, MEMORY_MAPPABLE, stagingBuffer.memory );
 	VK_CHECK( vkBindBufferMemory( renderObjects.device, stagingBuffer.buffer, stagingBuffer.memory.memory, stagingBuffer.memory.offset ) );
 	VK_CHECK( vkMapMemory( renderObjects.device, stagingBuffer.memory.memory, stagingBuffer.memory.offset, stagingSize, 0, &stagingBuffer.memoryData ) );
-	stagingBuffer.currentOffset = 0;
+	stagingBuffer.currentOffset = 0;	// Linear allocation in the staging buffer means we only have to keep the current offset and adjust for resource size and alignment
 
+	// The staging buffer needs its own command buffer so that it can be submitted all at once before any rendering commands.
 	VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
 	commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	commandBufferAllocateInfo.commandPool = renderObjects.commandPool;
@@ -348,7 +327,7 @@ void Renderer_Init() {
 void Renderer_BeginFrame() {
 	extern void PumpMessages();
 	PumpMessages();
-	VK_CHECK( vkWaitForFences( renderObjects.device, 1, &renderObjects.renderFence, VK_TRUE, INFINITE ) );
+	VK_CHECK( vkWaitForFences( renderObjects.device, 1, &renderObjects.renderFence, VK_TRUE, VK_FOREVER ) );
 	VK_CHECK( vkResetFences( renderObjects.device, 1, &renderObjects.renderFence ) );
 
 	renderObjects.commandContext->Begin();
@@ -356,7 +335,7 @@ void Renderer_BeginFrame() {
 }
 
 void Renderer_AcquireSwapchainImage() {
-	VK_CHECK( vkAcquireNextImageKHR( renderObjects.device, renderObjects.swapchain, INFINITE, renderObjects.imageAcquireSemaphore, VK_NULL_HANDLE, &renderObjects.swapchainImageIndex ) );
+	VK_CHECK( vkAcquireNextImageKHR( renderObjects.device, renderObjects.swapchain, VK_FOREVER, renderObjects.imageAcquireSemaphore, VK_NULL_HANDLE, &renderObjects.swapchainImageIndex ) );
 
 	renderObjects.swapchainImage->SelectSwapchainImage( renderObjects.swapchainImageIndex );
 }

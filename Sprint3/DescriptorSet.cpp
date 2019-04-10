@@ -2,6 +2,7 @@
 #include "Buffer.h"
 #include "Image.h"
 
+// Allocates a descriptor set for a specific scope.  It should only be bound at the specified scope (which it will remember).
 DescriptorSet * DescriptorSet::Allocate( descriptorScope_t scope ) {
 	DescriptorSet * result = new DescriptorSet;
 	result->m_scope = scope;

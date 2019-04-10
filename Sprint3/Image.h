@@ -5,6 +5,7 @@
 
 enum imageFormat_t {
 	IMAGE_FORMAT_RGBA8,
+	IMAGE_FORMAT_BGRA8,	// Needed for most architectures' swapchain image format
 	IMAGE_FORMAT_DEPTH,
 };
 

@@ -2,6 +2,7 @@
 #include "Mesh.h"
 #include "ShaderProgram.h"
 #include "DescriptorSet.h"
+#include "Buffer.h"
 #include <vector>
 
 static std::vector< renderPassDescription_t > createdPasses;
@@ -19,6 +20,8 @@ static VkRenderPass CreateRenderPass( const renderPassDescription_t & descriptio
 	if ( newDesc.color != NULL ) {
 		VkAttachmentDescription & attachmentDescription = attachmentDescriptions[ 0 ];
 		attachmentDescription = {};
+		// With the initialLayout matching the subpass layout and the finalLayout, the render pass will do nothing to the layout,
+		// so it's paramount that the image is ALREADY in the correct layout before setting it as a render target.
 		attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 		attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 		attachmentDescription.format = TranslateFormat( description.color->GetFormat() );
@@ -34,6 +37,7 @@ static VkRenderPass CreateRenderPass( const renderPassDescription_t & descriptio
 	if ( newDesc.depth != NULL ) {
 		VkAttachmentDescription & attachmentDescription = attachmentDescriptions[ newDesc.color != NULL ? 1 : 0 ];
 		attachmentDescription = {};
+		// See the comment for initialLayout and finalLayout for color images above.
 		attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 		attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 		attachmentDescription.format = TranslateFormat( description.depth->GetFormat() );
@@ -129,11 +133,6 @@ CommandContext * CommandContext::Create() {
 	bufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 	bufferAllocateInfo.commandBufferCount = 1;
 	VK_CHECK( vkAllocateCommandBuffers( renderObjects.device, &bufferAllocateInfo, &result->m_commandBuffer ) );
-
-	VkCommandBufferBeginInfo beginInfo = {};
-	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	VK_CHECK( vkBeginCommandBuffer( result->m_commandBuffer, &beginInfo ) );
 
 	return result;
 }
@@ -301,6 +300,14 @@ static VkPipeline CreatePipeline( const pipelineDescription_t & pipelineState ) 
 	pipelineCreateInfo.pTessellationState = NULL;
 	VkPipelineViewportStateCreateInfo viewportState = {};
 	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	// Even though the spec says that dynamic viewport and scissor means these members are ignored in the viewport state,
+	// validation will scream if there are aren't exactly one scissor and viewport here.
+	VkViewport stubViewport = {};
+	VkRect2D stubScissor = {};
+	viewportState.scissorCount = 1;
+	viewportState.pScissors = &stubScissor;
+	viewportState.viewportCount = 1;
+	viewportState.pViewports = &stubViewport;
 	pipelineCreateInfo.pViewportState = &viewportState;
 	VkPipelineDynamicStateCreateInfo dynamicState = {};
 	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
@@ -358,10 +365,10 @@ void CommandContext::Draw( const Mesh * mesh, const ShaderProgram * shader ) {
 	scissor.extent.width = m_viewportAndScissorWidth;
 	scissor.extent.height = m_viewportAndScissorHeight;
 	vkCmdSetScissor( m_commandBuffer, 0, 1, &scissor );
-	VkBuffer vertexBuffer = mesh->GetVertexBuffer();
+	VkBuffer vertexBuffer = mesh->GetVertexBuffer()->GetBuffer();
 	VkDeviceSize offset = 0;
 	vkCmdBindVertexBuffers( m_commandBuffer, 0, 1, &vertexBuffer, &offset );
-	VkBuffer indexBuffer = mesh->GetIndexBuffer();
+	VkBuffer indexBuffer = mesh->GetIndexBuffer()->GetBuffer();
 	vkCmdBindIndexBuffer( m_commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16 );
 	vkCmdDrawIndexed( m_commandBuffer, mesh->GetIndexCount(), 1, 0, 0, 0 );
 }
@@ -475,15 +482,25 @@ void CommandContext::PipelineBarrier( Image * image, imageLayout_t newLayout, ba
 	if ( m_pipelineState.renderPassState.color == image || m_pipelineState.renderPassState.depth == image ) {
 		EndRenderPass();
 	}
+	// We use layout tracking to make the interface easier.  It's generally more useful to know in what state you need
+	// to be, than to have to keep track of in what state you already are.
 	VkImageMemoryBarrier barrier = {};
 	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 	const bool discard = ( flags & BARRIER_DISCARD_AND_IGNORE_OLD_LAYOUT ) != 0;
 	VkPipelineStageFlags srcPipelineStage;
 	if ( discard == true ) {
+		// Setting the old layout to undefined means it doesn't matter what the current layout ACTUALLY is.  It also means
+		// that whatever is in the image at the time of the barrier is fair game for garbage.  This is a potential optimization
+		// as well as a convenience.  Generally, attachments should be discarded the first time they're used in a frame.
+		// In addition, render passes won't do any of this for us, so before setting a render target, it should be transitioned
+		// to the proper attachment layout.
 		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		barrier.srcAccessMask = 0;
 		srcPipelineStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 	} else {
+		if ( image->GetLayout() == newLayout ) {
+			return;	// Layouts that don't discard nor transition between two different layouts become a NOP.
+		}
 		TranslateImageLayout( image->GetLayout(), barrier.oldLayout, barrier.srcAccessMask, srcPipelineStage );
 	}
 	VkPipelineStageFlags dstPipelineStage;
