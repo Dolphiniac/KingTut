@@ -171,7 +171,7 @@ static void CreateSwapchain() {
 	delete[] surfaceFormats;
 }
 
-static void CreateCommandBuffers() {
+static void CreateCommandContexts() {
 	VkCommandPoolCreateInfo commandPoolCreateInfo = {};
 	commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	commandPoolCreateInfo.queueFamilyIndex = renderObjects.queueFamilyIndex;
@@ -330,7 +330,7 @@ void Renderer_Init() {
 
 	CreateSwapchain();
 
-	CreateCommandBuffers();
+	CreateCommandContexts();
 
 	CreateSynchronizationPrimitives();
 
