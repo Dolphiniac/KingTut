@@ -5,7 +5,38 @@
 #include "Buffer.h"
 #include <vector>
 
+struct framebufferDescription_t {
+	uint32_t width;
+	uint32_t height;
+	VkImageView colorView;
+	VkImageView depthStencilView;
+
+	VkFramebuffer framebuffer;
+
+	bool operator ==( const framebufferDescription_t & other ) const {
+		if ( width != other.width ) {
+			return false;
+		}
+		if ( height != other.height ) {
+			return false;
+		}
+		if ( colorView != other.colorView ) {
+			return false;
+		}
+		if ( depthStencilView != other.depthStencilView ) {
+			return false;
+		}
+		return true;
+	}
+
+	bool operator !=( const framebufferDescription_t & other ) const {
+		return !( *this == other );
+	}
+};
+
 static std::vector< renderPassDescription_t > createdPasses;
+static std::vector< framebufferDescription_t > createdFramebuffers;
+static std::vector< pipelineDescription_t > createdPipelines;
 
 static VkRenderPass CreateRenderPass( const renderPassDescription_t & description ) {
 	renderPassDescription_t newDesc = description;
@@ -68,37 +99,6 @@ static VkRenderPass CreateRenderPass( const renderPassDescription_t & descriptio
 	createdPasses.push_back( newDesc );
 	return newDesc.renderPass;
 }
-
-struct framebufferDescription_t {
-	uint32_t width;
-	uint32_t height;
-	VkImageView colorView;
-	VkImageView depthStencilView;
-
-	VkFramebuffer framebuffer;
-
-	bool operator ==( const framebufferDescription_t & other ) const {
-		if ( width != other.width ) {
-			return false;
-		}
-		if ( height != other.height ) {
-			return false;
-		}
-		if ( colorView != other.colorView ) {
-			return false;
-		}
-		if ( depthStencilView != other.depthStencilView ) {
-			return false;
-		}
-		return true;
-	}
-
-	bool operator !=( const framebufferDescription_t & other ) const {
-		return !( *this == other );
-	}
-};
-
-std::vector< framebufferDescription_t > createdFramebuffers;
 
 static VkFramebuffer CreateFramebuffer( const framebufferDescription_t & description, VkRenderPass renderPass ) {
 	framebufferDescription_t newDesc = description;
@@ -227,8 +227,6 @@ void CommandContext::SetViewportAndScissor( uint32_t width, uint32_t height ) {
 	m_viewportAndScissorWidth = width;
 	m_viewportAndScissorHeight = height;
 }
-
-static std::vector< pipelineDescription_t > createdPipelines;
 
 static VkPipeline CreatePipeline( const pipelineDescription_t & pipelineState ) {
 	pipelineDescription_t description = pipelineState;
