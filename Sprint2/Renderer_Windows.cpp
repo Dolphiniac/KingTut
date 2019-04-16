@@ -16,6 +16,8 @@ void CreateSurface() {
 	myClass.lpszClassName = className;
 	RegisterClassExA( &myClass );
 	RECT rect = {};
+	rect.left = 50;
+	rect.top = 50;
 	rect.right = 1600;
 	rect.bottom = 900;
 	DWORD windowStyle = WS_POPUP | WS_CAPTION | WS_VISIBLE;
